@@ -90,12 +90,6 @@ export default function AdminControls() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-sandTan mb-2">Admin Controls</h1>
-        <p className="text-textMuted">Manage users, permissions, integrations, and system settings.</p>
-      </div>
-
       {/* Tab Navigation */}
       <div className="flex gap-4 mb-8">
         <button

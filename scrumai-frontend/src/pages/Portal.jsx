@@ -46,41 +46,57 @@ export default function Portal() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-nightBlue to-nightBlueShadow text-sandTan font-sans">
+    <div className="min-h-screen bg-gradient-to-br from-background via-surface to-surfaceLight text-textPrimary font-sans">
       {/* Header */}
-      <header className="bg-gradient-to-r from-nightBlue to-nightBlueShadow py-4 px-4 md:px-6 sticky top-0 z-50 shadow-md border-b border-sandTan/20">
+      <header className="bg-gradient-to-r from-primaryDark via-primary to-primaryLight backdrop-blur-lg py-4 px-4 md:px-6 sticky top-0 z-50 shadow-xl border-b border-primary">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           {/* Left side */}
-          <div className="flex items-center gap-2 md:gap-3">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="lg:hidden text-sandTan hover:text-sandTanShadow transition-colors p-2 -m-2"
+              className="lg:hidden text-white hover:text-surfaceLight transition-colors p-2 -m-2"
               aria-label="Toggle sidebar"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <h1 className="text-lg md:text-2xl font-bold text-sandTan tracking-wide">
-              <span className="text-sandTanShadow">Scrum</span>AI
-            </h1>
-            <span className="hidden sm:block text-sandTan/80 text-sm md:text-base font-medium ml-2 border-l pl-3 border-sandTan/30">
-              User Portal
-            </span>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-secondary to-accent rounded-xl flex items-center justify-center shadow-lg ring-2 ring-white/20">
+                <span className="text-white font-bold text-lg">S</span>
+              </div>
+              <div>
+                <h1 className="text-lg md:text-2xl font-bold text-white tracking-wide drop-shadow-sm">
+                  ScrumAI
+                </h1>
+              </div>
+            </div>
           </div>
 
           {/* Right side */}
-          <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-2 text-sm text-textMuted">
-              <span>Welcome back,</span>
-              <span className="text-sandTan font-medium">{user?.name || "User"}</span>
+          <div className="flex items-center gap-4">
+            <div className="hidden lg:flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
+                <div className="w-2 h-2 bg-success rounded-full animate-pulse"></div>
+                <span className="text-white font-medium">Sprint Active</span>
+              </div>
+              <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
+                <span className="text-white font-semibold">87%</span>
+                <span className="text-white/80">Progress</span>
+              </div>
             </div>
-            <div className="w-9 h-9 rounded-full bg-sandTan text-nightBlue font-bold flex items-center justify-center shadow-sm">
+
+            <div className="hidden md:flex items-center gap-2 text-sm text-white/80">
+              <span>Welcome back,</span>
+              <span className="text-white font-medium">{user?.name || "User"}</span>
+            </div>
+            
+            <div className="w-10 h-10 rounded-full bg-gradient-to-r from-secondary to-accent text-white font-bold flex items-center justify-center shadow-lg hover:shadow-xl transition-all ring-2 ring-white/20">
               {user?.avatar || "U"}
             </div>
             <button
               onClick={logout}
-              className="text-sandTan hover:text-sandTanShadow transition-colors text-sm"
+              className="hidden md:block text-white/80 hover:text-white transition-colors text-sm"
             >
               Logout
             </button>
@@ -96,7 +112,7 @@ export default function Portal() {
         />
       )}
 
-      <div className="flex">
+      <div className="flex h-screen overflow-hidden">
         {/* Mobile Sidebar */}
         <motion.aside
           initial={false}
@@ -105,9 +121,16 @@ export default function Portal() {
             width: sidebarOpen ? "280px" : "0px" 
           }}
           transition={{ duration: 0.3 }}
-          className="fixed lg:hidden top-0 left-0 h-full bg-nightBlueShadow/95 backdrop-blur-sm border-r border-sandTan/20 z-40 overflow-hidden"
+          className="fixed lg:hidden top-0 left-0 h-full bg-gradient-to-b from-primaryDark via-primary to-primaryLight backdrop-blur-sm border-r border-primary z-40 overflow-y-auto"
         >
           <div className="p-6">
+            <div className="mb-6">
+              <div className="w-12 h-12 bg-gradient-to-r from-secondary to-accent rounded-xl flex items-center justify-center shadow-lg mb-3 ring-2 ring-white/20">
+                <span className="text-white font-bold text-xl">S</span>
+              </div>
+              <h2 className="text-white font-bold text-lg drop-shadow-sm">User Portal</h2>
+            </div>
+            
             <nav className="space-y-2">
               {navigationItems.map((item) => (
                 <button
@@ -118,8 +141,8 @@ export default function Portal() {
                   }}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300 ${
                     activeTab === item.id
-                      ? "bg-sandTan text-nightBlue shadow-lg"
-                      : "text-sandTan hover:bg-sandTan/20"
+                      ? "bg-secondary text-white shadow-lg ring-2 ring-white/20"
+                      : "text-white/80 hover:bg-white/10 hover:text-white"
                   }`}
                 >
                   <span className="text-lg">{item.icon}</span>
@@ -131,29 +154,30 @@ export default function Portal() {
         </motion.aside>
 
         {/* Desktop Sidebar */}
-        <aside className="hidden lg:block w-64 bg-nightBlueShadow/60 border-r border-sandTan/20">
+        <aside className="hidden lg:block w-72 bg-white/98 backdrop-blur-sm border-r border-border shadow-xl fixed left-0 h-full overflow-y-auto">
           <div className="p-6">
+            
             <nav className="space-y-2">
               {navigationItems.map((item) => (
-      <button
+                <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300 ${
+                  className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-300 ${
                     activeTab === item.id
-                      ? "bg-sandTan text-nightBlue shadow-lg"
-                      : "text-sandTan hover:bg-sandTan/20"
+                      ? "bg-gradient-to-r from-primaryDark to-primary text-white shadow-lg transform scale-105 ring-2 ring-primary/20"
+                      : "text-textSecondary hover:bg-surface hover:text-textPrimary"
                   }`}
                 >
-                  <span className="text-lg">{item.icon}</span>
-                  <span className="font-medium">{item.label}</span>
-      </button>
+                  <span className="text-xl">{item.icon}</span>
+                  <span className="font-semibold">{item.label}</span>
+                </button>
               ))}
             </nav>
           </div>
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 p-4 md:p-6 min-h-screen">
+        <main className="flex-1 lg:ml-72 overflow-y-auto p-6">
           <motion.div
             key={activeTab}
             initial={{ opacity: 0, x: 20 }}

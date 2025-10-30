@@ -106,12 +106,6 @@ export default function DependencyMonitor() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-sandTan mb-2">Dependency Monitor</h1>
-        <p className="text-textMuted">Track dependencies, identify risks, and monitor critical path to prevent delays.</p>
-      </div>
-
       {/* View Mode Selector */}
       <div className="flex gap-4 mb-8">
         <button
@@ -155,8 +149,6 @@ export default function DependencyMonitor() {
             transition={{ duration: 0.6 }}
             className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6"
           >
-            <h2 className="text-xl font-bold text-sandTan mb-6">Dependency Map</h2>
-            
             <div className="space-y-4">
               {dependencies.map((dep, index) => (
                 <div key={dep.id} className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-4">
@@ -235,8 +227,6 @@ export default function DependencyMonitor() {
           className="space-y-8"
         >
           <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-sandTan mb-6">Risk Alerts</h2>
-            
             <div className="space-y-4">
               {riskAlerts.map((alert, index) => (
                 <div key={alert.id} className={`border rounded-xl p-4 ${getSeverityColor(alert.severity)}`}>
@@ -284,8 +274,6 @@ export default function DependencyMonitor() {
           className="space-y-8"
         >
           <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-sandTan mb-6">Critical Path Analysis</h2>
-            
             <div className="space-y-4">
               {criticalPath.map((task, index) => (
                 <div key={index} className="flex items-center gap-4">

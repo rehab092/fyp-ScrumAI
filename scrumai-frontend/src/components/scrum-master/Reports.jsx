@@ -96,12 +96,6 @@ export default function Reports() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-sandTan mb-2">Reports & Analytics</h1>
-        <p className="text-textMuted">Generate comprehensive reports for stakeholders and team performance analysis.</p>
-      </div>
-
       {/* Report Type Selector */}
       <div className="flex gap-4 mb-8">
         <button

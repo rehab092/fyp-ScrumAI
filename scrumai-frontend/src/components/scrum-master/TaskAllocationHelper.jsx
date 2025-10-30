@@ -165,16 +165,6 @@ export default function TaskAllocationHelper() {
     <div className="space-y-6">
       {/* Header Section */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-textPrimary flex items-center gap-3">
-            <span className="text-4xl">🧩</span>
-            Task Allocation Helper
-          </h1>
-          <p className="text-textSecondary mt-2">
-            Intelligently assign tasks based on skills, workload, and priority
-          </p>
-        </div>
-
         <div className="flex flex-wrap gap-3">
           <button
             onClick={handleAutoAssign}

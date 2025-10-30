@@ -124,12 +124,6 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-sandTan mb-2">Dashboard</h1>
-        <p className="text-textMuted">Welcome back! Here's what's happening with your current sprint.</p>
-      </div>
-
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
         {metrics.map((metric, index) => (
@@ -163,7 +157,6 @@ export default function Dashboard() {
           transition={{ duration: 0.6, delay: 0.3 }}
           className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6"
         >
-          <h2 className="text-xl font-bold text-sandTan mb-6">Sprint Velocity Trend</h2>
           <ResponsiveContainer width="100%" height={300} className="chart-container">
             <LineChart data={velocityData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -196,7 +189,6 @@ export default function Dashboard() {
           transition={{ duration: 0.6, delay: 0.4 }}
           className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6"
         >
-          <h2 className="text-xl font-bold text-sandTan mb-6">Task Status Distribution</h2>
           <ResponsiveContainer width="100%" height={300} className="chart-container">
             <PieChart>
               <Pie
@@ -234,8 +226,6 @@ export default function Dashboard() {
           transition={{ duration: 0.6, delay: 0.5 }}
           className="lg:col-span-2 bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6"
         >
-          <h2 className="text-xl font-bold text-sandTan mb-6">Current Sprint Progress</h2>
-          
           <div className="space-y-4">
             {[
               { name: "User Authentication", progress: 100, status: "Completed" },
@@ -278,8 +268,6 @@ export default function Dashboard() {
           transition={{ duration: 0.6, delay: 0.5 }}
           className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6"
         >
-          <h2 className="text-xl font-bold text-sandTan mb-6">Recent Activities</h2>
-          
           <div className="space-y-4">
             {recentActivities.map((activity, index) => (
               <div key={index} className="flex items-start gap-3">
@@ -301,8 +289,6 @@ export default function Dashboard() {
         transition={{ duration: 0.6, delay: 0.7 }}
         className="mt-8 bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6"
       >
-        <h2 className="text-xl font-bold text-sandTan mb-6">Upcoming Tasks</h2>
-        
         <div className="overflow-x-auto">
           <table className="w-full responsive-table">
             <thead>

@@ -127,12 +127,6 @@ export default function ResourcePlanning() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-sandTan mb-2">Resource Planning</h1>
-        <p className="text-textMuted">Optimize team capacity, plan resource allocation, and forecast future needs.</p>
-      </div>
-
       {/* View Mode Selector */}
       <div className="flex gap-4 mb-8">
         <button

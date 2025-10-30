@@ -8,70 +8,67 @@ export default function DependencyMapper() {
   const tasks = [
     {
       id: 1,
-      title: "Database Setup",
+      title: "Authentication",
+      icon: "🔒",
       status: "Completed",
       dependencies: [],
       dependents: [2, 3],
-      x: 100,
-      y: 100
+      x: 300,
+      y: 20
     },
     {
       id: 2,
-      title: "User Authentication",
-      status: "In Progress",
+      title: "UI Components",
+      icon: "🎨",
+      status: "Ready",
       dependencies: [1],
-      dependents: [4, 5],
-      x: 300,
-      y: 100
+      dependents: [4],
+      x: 50,
+      y: 130
     },
     {
       id: 3,
-      title: "API Foundation",
-      status: "In Progress",
+      title: "API Layer",
+      icon: "⚡",
+      status: "Completed",
       dependencies: [1],
-      dependents: [4, 6],
-      x: 300,
-      y: 200
+      dependents: [5, 6],
+      x: 550,
+      y: 130
     },
     {
       id: 4,
-      title: "Product Catalog",
-      status: "Ready",
-      dependencies: [2, 3],
-      dependents: [5, 6],
-      x: 500,
-      y: 150
+      title: "Testing",
+      icon: "🧪",
+      status: "Completed",
+      dependencies: [2],
+      dependents: [5],
+      x: 50,
+      y: 240
     },
     {
       id: 5,
-      title: "Shopping Cart",
-      status: "Ready",
-      dependencies: [2, 4],
-      dependents: [7],
-      x: 700,
-      y: 100
+      title: "Deployment",
+      icon: "🚀",
+      status: "In Progress",
+      dependencies: [4, 3],
+      dependents: [6],
+      x: 300,
+      y: 240
     },
     {
       id: 6,
-      title: "Search Functionality",
-      status: "Ready",
-      dependencies: [3, 4],
-      dependents: [7],
-      x: 700,
-      y: 200
-    },
-    {
-      id: 7,
-      title: "Payment Processing",
-      status: "Ready",
-      dependencies: [5, 6],
+      title: "Analytics",
+      icon: "📊",
+      status: "Completed",
+      dependencies: [5, 3],
       dependents: [],
-      x: 900,
-      y: 150
+      x: 550,
+      y: 240
     }
   ];
 
-  const criticalPath = [1, 2, 4, 5, 7];
+  const criticalPath = [1, 3, 5, 6];
   const riskAlerts = [
     {
       id: 1,
@@ -93,11 +90,11 @@ export default function DependencyMapper() {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case "Completed": return "bg-green-500";
-      case "In Progress": return "bg-blue-500";
-      case "Ready": return "bg-gray-500";
-      case "Blocked": return "bg-red-500";
-      default: return "bg-gray-500";
+      case "Completed": return "bg-gradient-to-br from-emerald-500 to-teal-600 border-2 border-emerald-400";
+      case "In Progress": return "bg-gradient-to-br from-orange-500 to-orange-600 border-2 border-orange-400";
+      case "Ready": return "bg-gradient-to-br from-slate-600 to-slate-700 border-2 border-slate-500";
+      case "Blocked": return "bg-gradient-to-br from-red-500 to-red-600 border-2 border-red-400";
+      default: return "bg-gradient-to-br from-slate-600 to-slate-700 border-2 border-slate-500";
     }
   };
 
@@ -112,12 +109,6 @@ export default function DependencyMapper() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-sandTan mb-2">Dependency Mapper</h1>
-        <p className="text-textMuted">Visualize and manage task dependencies to prevent blockers and delays.</p>
-      </div>
-
       {/* View Mode Selector */}
       <div className="flex gap-4 mb-8">
         <button
@@ -189,13 +180,15 @@ export default function DependencyMapper() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6"
+          className="bg-white border border-slate-200 rounded-2xl p-6 shadow-lg"
         >
-          <h2 className="text-xl font-bold text-sandTan mb-6">Task Dependency Graph</h2>
-          
-          <div className="relative bg-nightBlue/30 rounded-xl p-8 min-h-[500px] overflow-auto">
+          <div className="mb-4 flex items-center gap-3">
+            <span className="text-2xl">🔗</span>
+            <h2 className="text-xl font-bold text-slate-800">Task Dependencies Flow</h2>
+          </div>
+          <div className="relative bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-8 h-[380px] overflow-visible border border-slate-200">
             {/* SVG for connections */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none">
+            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }}>
               {tasks.map((task) =>
                 task.dependencies.map((depId) => {
                   const depTask = tasks.find(t => t.id === depId);
@@ -203,17 +196,38 @@ export default function DependencyMapper() {
                   
                   const isCritical = criticalPath.includes(task.id) && criticalPath.includes(depId);
                   
+                  // Node dimensions
+                  const nodeWidth = 160; // w-40 = 160px
+                  const nodeHeight = 64; // h-16 = 64px
+                  
+                  // Calculate connection points (from bottom of parent to top of child)
+                  const x1 = depTask.x + nodeWidth / 2;
+                  const y1 = depTask.y + nodeHeight;
+                  const x2 = task.x + nodeWidth / 2;
+                  const y2 = task.y;
+                  
+                  // Create curved path with smooth S-curve
+                  const midY = (y1 + y2) / 2;
+                  const path = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+                  
                   return (
-                    <line
-                      key={`${depId}-${task.id}`}
-                      x1={depTask.x + 60}
-                      y1={depTask.y + 30}
-                      x2={task.x + 60}
-                      y2={task.y + 30}
-                      stroke={isCritical ? "#e1b382" : "#d6d6d6"}
-                      strokeWidth={isCritical ? 3 : 2}
-                      strokeDasharray={isCritical ? "0" : "5,5"}
-                    />
+                    <g key={`${depId}-${task.id}`}>
+                      <path
+                        d={path}
+                        stroke={isCritical ? "#10B981" : "#3B82F6"}
+                        strokeWidth={isCritical ? 3 : 2.5}
+                        strokeDasharray={isCritical ? "0" : "0"}
+                        fill="none"
+                        opacity={isCritical ? 0.8 : 0.6}
+                        strokeLinecap="round"
+                      />
+                      {/* Arrow head */}
+                      <polygon
+                        points={`${x2},${y2} ${x2-5},${y2-8} ${x2+5},${y2-8}`}
+                        fill={isCritical ? "#10B981" : "#3B82F6"}
+                        opacity={isCritical ? 0.8 : 0.6}
+                      />
+                    </g>
                   );
                 })
               )}
@@ -226,47 +240,48 @@ export default function DependencyMapper() {
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.6, delay: task.id * 0.1 }}
-                className={`absolute w-32 h-16 rounded-lg border-2 cursor-pointer transition-all duration-300 ${
+                className={`absolute w-40 h-16 rounded-xl shadow-lg cursor-pointer transition-all duration-300 hover:scale-105 hover:shadow-xl ${
                   selectedNode === task.id
-                    ? "border-sandTan shadow-glow"
-                    : criticalPath.includes(task.id)
-                    ? "border-sandTan/60"
-                    : "border-sandTan/30"
+                    ? "ring-2 ring-primary shadow-2xl scale-105"
+                    : ""
                 } ${getStatusColor(task.status)}`}
-                style={{ left: task.x, top: task.y }}
+                style={{ left: task.x, top: task.y, zIndex: 10 }}
                 onClick={() => setSelectedNode(selectedNode === task.id ? null : task.id)}
               >
-                <div className="p-2 h-full flex flex-col justify-center">
-                  <div className="text-xs font-semibold text-white truncate" title={task.title}>
-                    {task.title}
+                <div className="p-2 h-full flex items-center gap-2">
+                  <span className="text-lg">{task.icon}</span>
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold text-white truncate" title={task.title}>
+                      {task.title}
+                    </div>
+                    <div className="text-xs text-white/80 capitalize">{task.status}</div>
                   </div>
-                  <div className="text-xs text-white/80 capitalize">{task.status}</div>
                 </div>
               </motion.div>
             ))}
           </div>
 
           {/* Legend */}
-          <div className="mt-6 flex flex-wrap gap-6 text-sm">
+          <div className="mt-6 flex flex-wrap gap-6 text-sm bg-white rounded-lg p-4 border border-slate-200">
             <div className="flex items-center gap-2">
-              <div className="w-4 h-0.5 bg-sandTan"></div>
-              <span className="text-textMuted">Critical Path</span>
+              <div className="w-6 h-1 bg-emerald-500 rounded-full"></div>
+              <span className="text-slate-700 font-medium">Critical Path</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-4 h-0.5 bg-textMuted" style={{ strokeDasharray: "5,5" }}></div>
-              <span className="text-textMuted">Regular Dependency</span>
+              <div className="w-6 h-1 bg-blue-500 rounded-full"></div>
+              <span className="text-slate-700 font-medium">Dependency</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-green-500 rounded"></div>
-              <span className="text-textMuted">Completed</span>
+              <div className="w-4 h-4 bg-gradient-to-br from-emerald-500 to-teal-600 rounded"></div>
+              <span className="text-slate-700">Completed</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-blue-500 rounded"></div>
-              <span className="text-textMuted">In Progress</span>
+              <div className="w-4 h-4 bg-gradient-to-br from-orange-500 to-orange-600 rounded"></div>
+              <span className="text-slate-700">In Progress</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-gray-500 rounded"></div>
-              <span className="text-textMuted">Ready</span>
+              <div className="w-4 h-4 bg-gradient-to-br from-slate-600 to-slate-700 rounded"></div>
+              <span className="text-slate-700">Ready</span>
             </div>
           </div>
         </motion.div>

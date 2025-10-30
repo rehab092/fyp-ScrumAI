@@ -164,7 +164,7 @@ export default function ScrumMasterPortal() {
         />
       )}
 
-      <div className="flex">
+      <div className="flex h-screen overflow-hidden">
         {/* Mobile Sidebar */}
         <motion.aside
           initial={false}
@@ -173,7 +173,7 @@ export default function ScrumMasterPortal() {
             width: sidebarOpen ? "280px" : "0px" 
           }}
           transition={{ duration: 0.3 }}
-          className="fixed lg:hidden top-0 left-0 h-full bg-gradient-to-b from-primaryDark via-primary to-primaryLight backdrop-blur-sm border-r border-primary z-40 overflow-hidden"
+          className="fixed lg:hidden top-0 left-0 h-full bg-gradient-to-b from-primaryDark via-primary to-primaryLight backdrop-blur-sm border-r border-primary z-40 overflow-y-auto"
         >
           <div className="p-6">
             <div className="mb-6">
@@ -206,7 +206,7 @@ export default function ScrumMasterPortal() {
         </motion.aside>
 
         {/* Desktop Sidebar */}
-        <aside className="hidden lg:block w-72 bg-white/98 backdrop-blur-sm border-r border-border shadow-xl">
+        <aside className="hidden lg:block w-72 bg-white/98 backdrop-blur-sm border-r border-border shadow-xl fixed left-0 h-full overflow-y-auto">
           <div className="p-6">
             
             <nav className="space-y-2">
@@ -225,27 +225,11 @@ export default function ScrumMasterPortal() {
                 </button>
               ))}
             </nav>
-
-            {/* Quick Actions */}
-            <div className="mt-8 p-4 bg-gradient-to-r from-primary/10 to-secondary/10 rounded-xl border border-primary/20 shadow-sm">
-              <h3 className="text-textPrimary font-semibold mb-3">Quick Actions</h3>
-              <div className="space-y-2">
-                <button className="w-full text-left px-3 py-2 text-sm text-textSecondary hover:bg-white/50 rounded-lg transition-colors">
-                  🚀 Start New Sprint
-                </button>
-                <button className="w-full text-left px-3 py-2 text-sm text-textSecondary hover:bg-white/50 rounded-lg transition-colors">
-                  📊 Generate Report
-                </button>
-                <button className="w-full text-left px-3 py-2 text-sm text-textSecondary hover:bg-white/50 rounded-lg transition-colors">
-                  👥 Add Team Member
-                </button>
-              </div>
-            </div>
           </div>
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 p-6 min-h-screen">
+        <main className="flex-1 lg:ml-72 overflow-y-auto p-6">
           <motion.div
             key={activeTab}
             initial={{ opacity: 0, x: 20 }}

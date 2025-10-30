@@ -266,12 +266,6 @@ export default function BacklogManager() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-sandTan mb-2">Backlog Manager</h1>
-        <p className="text-textMuted">Manage your user stories and product backlog efficiently.</p>
-      </div>
-
       {/* Mode Selector */}
       <div className="flex flex-wrap gap-4 mb-8">
         <button

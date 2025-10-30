@@ -147,12 +147,6 @@ export default function SprintPlanner() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-sandTan mb-2">Sprint Planner</h1>
-        <p className="text-textMuted">Plan and optimize your sprints with AI-powered insights.</p>
-      </div>
-
       {/* Sprint Tabs */}
       <div className="flex gap-4 mb-8">
         <button

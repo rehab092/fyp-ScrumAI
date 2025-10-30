@@ -182,11 +182,35 @@ export default function ScrumMasterDashboard() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-textPrimary mb-2">Scrum Master Dashboard</h1>
-        <p className="text-textSecondary">Monitor team performance, sprint health, and project risks in real-time.</p>
-      </div>
+      {/* Quick Actions */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4"
+      >
+        <button className="flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-primary to-primaryDark text-white rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105">
+          <span className="text-2xl">🚀</span>
+          <div className="text-left">
+            <div className="font-semibold">Start New Sprint</div>
+            <div className="text-xs text-white/80">Begin sprint planning</div>
+          </div>
+        </button>
+        <button className="flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-secondary to-accent text-white rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105">
+          <span className="text-2xl">📊</span>
+          <div className="text-left">
+            <div className="font-semibold">Generate Report</div>
+            <div className="text-xs text-white/80">Create sprint report</div>
+          </div>
+        </button>
+        <button className="flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-primary to-secondary text-white rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105">
+          <span className="text-2xl">👥</span>
+          <div className="text-left">
+            <div className="font-semibold">Add Team Member</div>
+            <div className="text-xs text-white/80">Invite to team</div>
+          </div>
+        </button>
+      </motion.div>
 
       {/* KPI Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -220,8 +244,6 @@ export default function ScrumMasterDashboard() {
           transition={{ duration: 0.6, delay: 0.4 }}
           className="lg:col-span-2 bg-white border border-border rounded-2xl p-6"
         >
-          <h2 className="text-xl font-bold text-textPrimary mb-6">Active Sprints</h2>
-          
           <div className="space-y-6">
             {activeSprints.map((sprint, index) => (
               <div key={sprint.id} className="bg-surface border border-border rounded-xl p-6">
@@ -285,8 +307,6 @@ export default function ScrumMasterDashboard() {
           transition={{ duration: 0.6, delay: 0.5 }}
           className="bg-white/60 border border-sandTan/20 rounded-2xl p-6"
         >
-          <h2 className="text-xl font-bold text-textPrimary mb-6">Risk Alerts</h2>
-          
           <div className="space-y-4">
             {riskAlerts.map((alert, index) => (
               <div key={alert.id} className={`border rounded-xl p-4 ${getSeverityColor(alert.severity)}`}>
@@ -317,8 +337,6 @@ export default function ScrumMasterDashboard() {
         transition={{ duration: 0.6, delay: 0.6 }}
         className="mt-8 bg-white/60 border border-sandTan/20 rounded-2xl p-6"
       >
-        <h2 className="text-xl font-bold text-textPrimary mb-6">Team Performance Overview</h2>
-        
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {teamPerformance.map((member, index) => (
             <div key={index} className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-4">
@@ -379,8 +397,6 @@ export default function ScrumMasterDashboard() {
         transition={{ duration: 0.6, delay: 0.7 }}
         className="mt-8 bg-white/60 border border-sandTan/20 rounded-2xl p-6"
       >
-        <h2 className="text-xl font-bold text-textPrimary mb-6">Recent Activities</h2>
-        
         <div className="space-y-4">
           {recentActivities.map((activity, index) => (
             <div key={index} className="flex items-start gap-3">

@@ -160,12 +160,6 @@ export default function SprintManagement() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-sandTan mb-2">Sprint Management</h1>
-        <p className="text-textMuted">Plan, monitor, and manage sprints with AI-powered insights and optimization.</p>
-      </div>
-
       {/* View Selector */}
       <div className="flex gap-4 mb-8">
         <button

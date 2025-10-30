@@ -66,12 +66,6 @@ export default function Settings() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-textPrimary mb-2">Settings</h1>
-        <p className="text-textSecondary">Manage your account and application preferences.</p>
-      </div>
-
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Settings Navigation */}
         <div className="lg:w-64">
