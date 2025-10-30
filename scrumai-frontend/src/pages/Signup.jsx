@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import Navbar from "../components/Navbar";
+// import { API_ENDPOINTS, apiRequest } from "../config/api"; // TODO: Uncomment when backend is ready
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -35,6 +36,24 @@ export default function Signup() {
         throw new Error("Password must be at least 6 characters");
       }
 
+      // TODO: Uncomment this when backend is ready
+      // API call to backend for user registration
+      // const response = await apiRequest(API_ENDPOINTS.auth.signup, {
+      //   method: 'POST',
+      //   body: JSON.stringify({
+      //     name: formData.name,
+      //     email: formData.email,
+      //     password: formData.password,
+      //     role: formData.role,
+      //   }),
+      // });
+      // 
+      // const { user, token } = response;
+      // localStorage.setItem('authToken', token);
+      // const redirectPath = getRedirectPath(user.role);
+      // navigate(redirectPath);
+
+      // TEMPORARY: Mock signup - Remove when backend is ready
       const user = await signup(formData.name, formData.email, formData.password, formData.role);
       const redirectPath = getRedirectPath(user.role);
       navigate(redirectPath);

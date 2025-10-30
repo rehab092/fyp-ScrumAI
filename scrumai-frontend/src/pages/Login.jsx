@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import Navbar from "../components/Navbar";
+// import { API_ENDPOINTS, apiRequest } from "../config/api"; // TODO: Uncomment when backend is ready
 
 export default function Login() {
   const navigate = useNavigate();
@@ -24,7 +25,22 @@ export default function Login() {
         throw new Error("Email and password are required");
       }
 
-      // Determine role based on email
+      // TODO: Uncomment this when backend is ready
+      // API call to backend for authentication
+      // const response = await apiRequest(API_ENDPOINTS.auth.login, {
+      //   method: 'POST',
+      //   body: JSON.stringify({
+      //     email: formData.email,
+      //     password: formData.password,
+      //   }),
+      // });
+      // 
+      // const { user, token } = response;
+      // localStorage.setItem('authToken', token);
+      // const redirectPath = getRedirectPath(user.role);
+      // navigate(redirectPath);
+
+      // TEMPORARY: Mock authentication - Remove when backend is ready
       let role = "teamMember"; // Default role
       if (formData.email === "scrum@scrumai.com") {
         role = "scrumMaster";
