@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+  <h2>Product Owners</h2>
+  <a href="{% url 'userstorymanager:owner_create' %}">Add New Owner</a>
+  <ul>
+    {% for owner in owners %}
+      <li>{{ owner }} - <a href="{% url 'userstorymanager:owner_update' owner.pk %}">Edit</a> | <a href="{% url 'userstorymanager:owner_delete' owner.pk %}">Delete</a></li>
+    {% endfor %}
+  </ul>
+{% endblock %}

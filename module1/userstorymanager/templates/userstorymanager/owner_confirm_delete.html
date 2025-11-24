@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block content %}
+  <h2>Delete Product Owner</h2>
+  <form method="post" action="{% url 'userstorymanager:owner_delete' owner.pk %}">
+    {% csrf_token %}
+    <p>Are you sure you want to delete {{ owner }}?</p>
+    <button type="submit">Confirm</button>
+  </form>
+{% endblock %}
