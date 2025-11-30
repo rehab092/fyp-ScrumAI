@@ -454,3 +454,49 @@ def get_all_tasks(request):
         tasks = Backlog.objects.all().values('task_id', 'project_id', 'user_story_id', 'tasks', 'subtasks')
         return JsonResponse(list(tasks), safe=False)
     return JsonResponse({'error': 'Invalid request method'}, status=405)
+#delete user stories 
+
+@csrf_exempt
+def delete_user_story(request, user_story_id):
+    """Delete a UserStory by id."""
+    if request.method == 'DELETE':
+        try:
+            story = UserStory.objects.get(id=user_story_id)
+            story.delete()
+            return JsonResponse({'message': 'User story deleted successfully'})
+        except UserStory.DoesNotExist:
+            return JsonResponse({'error': 'User story not found'}, status=404)
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
+#get all user stories
+@csrf_exempt
+def get_all_userstories(request):
+    """Return all UserStory records as JSON."""
+    if request.method == 'GET':
+        stories = list(UserStory.objects.all().values(
+            'id', 'owner_id', 'role', 'goal', 'benefit', 'priority', 'project_name', 'text_file', 'project_id'
+        ))
+        return JsonResponse(stories, safe=False)
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+#edit userstory
+@csrf_exempt
+def update_user_story(request, user_story_id):
+    """Update a UserStory by id (PUT request)."""
+    if request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            story = UserStory.objects.get(id=user_story_id)
+            
+            story.role = data.get('role', story.role)
+            story.goal = data.get('goal', story.goal)
+            story.benefit = data.get('benefit', story.benefit)
+            story.priority = data.get('priority', story.priority)
+            story.project_name = data.get('project_name', story.project_name)
+            
+            story.save()
+            return JsonResponse({'message': 'User story updated successfully'})
+        except UserStory.DoesNotExist:
+            return JsonResponse({'error': 'User story not found'}, status=404)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    return JsonResponse({'error': 'Invalid request method'}, status=405)

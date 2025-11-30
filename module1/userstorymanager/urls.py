@@ -12,8 +12,9 @@ urlpatterns = [
     path('tasks/<int:user_story_id>/', views.get_tasks_by_user_story, name='get_tasks_by_user_story'),  # Get tasks for a user story
     path('task/<int:task_id>/update/', views.update_task, name='update_task'),  # Update task
     path('task/<int:task_id>/delete/', views.delete_task, name='delete_task'),  # Delete task
-    
-    
-    
+    path('story/<int:user_story_id>/delete/', views.delete_user_story, name='delete_user_story'),
+
+ path('stories/', views.get_all_userstories, name='get_all_userstories'),
+ path('story/<int:user_story_id>/update/', views.update_user_story, name='update_user_story'),
 
 ]
