@@ -16,5 +16,11 @@ urlpatterns = [
 
  path('stories/', views.get_all_userstories, name='get_all_userstories'),
  path('story/<int:user_story_id>/update/', views.update_user_story, name='update_user_story'),
-
+path('owner_by_email/', views.get_product_owner_by_email, name='owner_by_email'),
+# Project endpoints
+    path('projects/', views.get_all_projects, name='get_all_projects'),  # Get all projects
+    path('projects/owner/<int:owner_id>/', views.get_projects_by_owner, name='get_projects_by_owner'),  # Get projects by owner ID
+    path('project/<int:project_id>/update/', views.update_project, name='update_project'),  # Update project
+    path('project/<int:project_id>/delete/', views.delete_project, name='delete_project'),  # Delete project
+    path('project/create/', views.create_project, name='create_project'),  # Create a new project
 ]

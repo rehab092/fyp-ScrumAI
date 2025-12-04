@@ -11,6 +11,7 @@ import re
 import time
 import uuid
 import openai
+from .jwt_utils import generate_jwt_token
 
 # =========================
 # OpenAI setup
@@ -198,7 +199,6 @@ def product_owner_delete(request, pk):
             return JsonResponse({"error": "Owner not found"}, status=404)
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
-
 @csrf_exempt
 def product_owner_login(request):
     if request.method == "POST":
@@ -214,11 +214,19 @@ def product_owner_login(request):
                 return JsonResponse({"error": "Invalid email or password"}, status=401)
             if owner.password != password:
                 return JsonResponse({"error": "Invalid email or password"}, status=401)
-            return JsonResponse({"message": "Login successful", "owner_id": owner.id})
+            
+            # Generate JWT token with user's email
+            token = generate_jwt_token(email)
+            
+            return JsonResponse({
+                "message": "Login successful", 
+                "owner_id": owner.id,
+                "token": token,
+                "email": email
+            }, status=200)
         except json.JSONDecodeError:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
     return JsonResponse({"error": "Invalid request method"}, status=405)
-
 
 # =========================
 # Upload & Decompose User Stories (multi-line text)
@@ -234,11 +242,11 @@ def upload_user_story(request):
         role       = request.POST.get('role')
         goal       = request.POST.get('goal')
         benefit    = request.POST.get('benefit')
-        priority   = request.POST.get('priority')
         stories_tx = (request.POST.get('stories_text') or '').strip()
 
-        if not all([owner_id, project_id, role, benefit, priority]):
-            return JsonResponse({'error': 'owner_id, project_id, role, benefit, priority are required.'}, status=400)
+        if not all([owner_id, project_id, role, benefit]):
+            return JsonResponse({'error': 'owner_id, project_id, role, benefit are required.'}, status=400)
+
         if not stories_tx:
             return JsonResponse({'error': 'stories_text is required (one story per line).'}, status=400)
 
@@ -252,17 +260,38 @@ def upload_user_story(request):
             if ln and ln not in seen:
                 seen.add(ln)
                 story_lines.append(ln)
+
         if not story_lines:
             return JsonResponse({'error': 'No valid user stories found.'}, status=400)
 
+
+        # -------------------------------
+        # EXTRACT PRIORITY PER STORY LINE
+        # Format expected:
+        # "story text | High"
+        # -------------------------------
+        def split_story_priority(line):
+            if "|" in line:
+                parts = line.split("|", 1)
+                return parts[0].strip(), parts[1].strip()
+            return line, "Medium"  # default if not given
+
+
+        processed_lines = []
+        for ln in story_lines:
+            story_text, pr = split_story_priority(ln)
+            processed_lines.append((ln, story_text, pr))
+
+
         # --- Create UserStory rows ---
-        user_stories = []  # (UserStory, original_text, seq)
-        for seq, story_text in enumerate(story_lines, start=1):
-            m = re.match(r"As an? ([^,]+), (?:I want )?([^,]+?)(?:, so that |, so )(.+)", story_text, flags=re.IGNORECASE)
+        user_stories = []  # (UserStory, original_text, seq, priority)
+        for seq, (original_full_line, pure_story_text, story_priority) in enumerate(processed_lines, start=1):
+
+            m = re.match(r"As an? ([^,]+), (?:I want )?([^,]+?)(?:, so that |, so )(.+)", pure_story_text, flags=re.IGNORECASE)
             if m:
                 story_role, story_goal, story_benefit = m.groups()
             else:
-                story_role, story_goal, story_benefit = role, story_text, benefit
+                story_role, story_goal, story_benefit = role, pure_story_text, benefit
 
             us = UserStory.objects.create(
                 owner=owner,
@@ -270,24 +299,28 @@ def upload_user_story(request):
                 role=story_role.strip(),
                 goal=story_goal.strip(),
                 benefit=story_benefit.strip(),
-                priority=priority,
+                priority=story_priority,    # <<–– PRIORITY FROM STORY LINE
                 project_name=project.name,
-                text_file=None,
             )
-            user_stories.append((us, story_text, seq))
 
-        # --------- PROMPTS (force exact echo) ----------
+            user_stories.append((us, original_full_line, seq, story_priority))
+
+
+        # --------- PROMPTS (per-story priority) ----------
         def build_block_prompt(lines):
             joined = "\n".join(lines)
             return f"""
 Return strictly VALID JSON only. Do NOT include markdown/code fences.
 
 For each non-empty line below (ONE user story per line):
-- Produce essential developer tasks only (no over-fragmentation).
-- Subtasks ONLY if necessary, else ["empty"].
+- Each line includes PRIORITY at the end in format: "story text | Priority"
+- Extract the priority EXACTLY as it is.
+- ECHO THE FULL ORIGINAL LINE EXACTLY AS GIVEN.
+- Include `"priority"` for each story using the extracted value.
+- Produce essential developer tasks only.
+- Subtasks only when needed.
 - Strings <= 120 chars.
-- Number tasks as strings "1","2","3",...
-- MOST IMPORTANT: ECHO THE STORY TEXT EXACTLY AS GIVEN (byte-for-byte); DO NOT REPHRASE OR TRIM.
+- Number tasks as "1","2","3",...
 
 Input:
 {joined}
@@ -296,7 +329,8 @@ Output JSON (ONLY):
 {{
   "stories": [
     {{
-      "story": "EXACT original line here",
+      "story": "EXACT original full line",
+      "priority": "PriorityExactlyHere",
       "tasks": [
         {{"task_number": "1", "task": "short technical description", "subtasks": ["empty"]}}
       ]
@@ -305,33 +339,40 @@ Output JSON (ONLY):
 }}
 """.strip()
 
+
         def build_single_prompt(line):
             return f"""
 Return strictly VALID JSON only. No markdown.
 
-ECHO THE STORY TEXT EXACTLY AS GIVEN (no edits):
+ECHO THIS FULL LINE EXACTLY:
 {line}
 
 Rules:
-- Essential, concrete tasks.
-- Subtasks only if really needed, else ["empty"].
+- Each line contains story + priority using " | Priority".
+- Extract priority EXACTLY.
+- Include a "priority" field in output.
+- Essential tasks only, subtasks only when needed.
 - Strings <= 120 chars.
-- JSON keys: "story","tasks","task_number","task","subtasks".
 
 Output:
 {{
   "stories": [
     {{
       "story": "{line}",
-      "tasks": [{{"task_number": "1", "task": "short technical description", "subtasks": ["empty"]}}]
+      "priority": "PriorityHere",
+      "tasks": [
+        {{"task_number": "1", "task": "short technical description", "subtasks": ["empty"]}}
+      ]
     }}
   ]
 }}
 """.strip()
 
+
         # --- LLM calls ---
         all_stories = []
-        llm_debug = []  # capture what came back to help debug
+        llm_debug = []
+
         for block in [story_lines[i:i+10] for i in range(0, len(story_lines), 10)]:
             raw = call_llm(build_block_prompt(block), max_tokens=1200)
             try:
@@ -345,6 +386,7 @@ Output:
                     llm_debug.append(sp)
                     all_stories.extend(sp.get("stories", []))
 
+
         # --- Robust mapping: normalize both sides ---
         def norm(s: str) -> str:
             if not s: return ""
@@ -353,26 +395,30 @@ Output:
             s = re.sub(r"\s+", " ", s)
             return s
 
-        map_text = {norm(t): (obj, seq) for (obj, t, seq) in user_stories}
+
+        map_text = {norm(t): (obj, seq, pr) for (obj, t, seq, pr) in user_stories}
+
 
         # --- Persist Backlog ---
         tasks_created = 0
+
         for item in all_stories:
             text = norm(item.get("story") or "")
+
             pair = map_text.get(text)
 
             if pair is None:
-                # Fallback: loose contains (helps if model added/removed a space)
-                for (obj, t, seq) in user_stories:
+                for (obj, t, seq, pr) in user_stories:
                     nt = norm(t)
                     if text and (text in nt or nt in text):
-                        pair = (obj, seq)
+                        pair = (obj, seq, pr)
                         break
+
             if pair is None:
-                # couldn't match; skip
                 continue
 
-            us_obj, seq = pair
+            us_obj, seq, story_priority = pair
+
             for idx, task in enumerate(item.get("tasks", []) or [], start=1):
                 ttxt = (task.get("task") or "").strip()
                 subt = task.get("subtasks", []) or []
@@ -381,18 +427,18 @@ Output:
 
                 Backlog.objects.create(
                     project_id=str(project.id),
-                    user_story=us_obj,    # FK field name in Django
-                    tasks=numbered,       # e.g., "1.1 Implement X"
-                    subtasks=subt_csv     # "empty" or CSV
+                    user_story=us_obj,
+                    tasks=numbered,
+                    subtasks=subt_csv
                 )
                 tasks_created += 1
+
 
         return JsonResponse({
             "message": "Processed successfully.",
             "project_id": project_id,
             "stories_created": len(user_stories),
             "tasks_created": tasks_created,
-            "llm_empty_hint": (len(all_stories) == 0),   # quick hint for you
         })
 
     except ProductOwner.DoesNotExist:
@@ -473,7 +519,7 @@ def get_all_userstories(request):
     """Return all UserStory records as JSON."""
     if request.method == 'GET':
         stories = list(UserStory.objects.all().values(
-            'id', 'owner_id', 'role', 'goal', 'benefit', 'priority', 'project_name', 'text_file', 'project_id'
+            'id', 'owner_id', 'role', 'goal', 'benefit', 'priority', 'project_name', 'project_id'
         ))
         return JsonResponse(stories, safe=False)
     return JsonResponse({'error': 'Invalid request method'}, status=405)
@@ -500,3 +546,208 @@ def update_user_story(request, user_story_id):
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
     return JsonResponse({'error': 'Invalid request method'}, status=405)
+ 
+ 
+@csrf_exempt
+def get_product_owner_by_email(request):
+    """
+    GET endpoint to find a ProductOwner by email.
+    Expects a query parameter `email`, e.g. `/userstorymanager/owner_by_email/?email=user@example.com`.
+    """
+    if request.method == "GET":
+        email = request.GET.get("email")
+        if not email:
+            return JsonResponse({"error": "Email query parameter is required"}, status=400)
+        try:
+            owner_data = ProductOwner.objects.filter(email=email).values(
+                "id", "name", "email", "company_name", "created_at"
+            ).first()
+            if not owner_data:
+                return JsonResponse({"error": "Owner not found"}, status=404)
+
+            # Convert datetime to ISO string for JSON serialization
+            if owner_data.get("created_at"):
+                owner_data["created_at"] = owner_data["created_at"].isoformat()
+
+            return JsonResponse(owner_data, status=200)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+@csrf_exempt
+def project_detail(request, owner):
+    """
+    Retrieve, update, or delete a Project by primary key.
+
+    Methods supported:
+    - GET: return project details
+    - PUT: update project fields (expects JSON with `name` and/or `description` and/or `owner_id`)
+    - DELETE: delete the project
+    """
+    try:
+        project = Project.objects.get(owner=owner)
+    except Project.DoesNotExist:
+        return JsonResponse({"error": "Project not found"}, status=404)
+
+    if request.method == "GET":
+        data = {
+            "id": project.id,
+            "name": project.name,
+            "description": project.description,
+            "owner_id": project.owner.id if project.owner else None,
+        }
+        return JsonResponse(data, status=200)
+
+    if request.method == "PUT":
+        try:
+            payload = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+        name = payload.get("name")
+        description = payload.get("description")
+        owner_id = payload.get("owner_id")
+
+        if name is not None:
+            project.name = name
+        if description is not None:
+            project.description = description
+        if owner_id is not None:
+            try:
+                owner = ProductOwner.objects.get(pk=owner_id)
+                project.owner = owner
+            except ProductOwner.DoesNotExist:
+                return JsonResponse({"error": "Owner with provided owner_id does not exist"}, status=400)
+
+        project.save()
+        return JsonResponse({"message": "Project updated successfully"}, status=200)
+
+    if request.method == "DELETE":
+        project.delete()
+        return JsonResponse({"message": "Project deleted successfully"}, status=200)
+
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+@csrf_exempt
+def get_projects_by_owner(request, owner_id):
+    """
+    GET endpoint to retrieve all projects for a specific owner.
+    URL: /userstorymanager/projects/owner/<owner_id>/
+    """
+    if request.method == "GET":
+        try:
+            owner = ProductOwner.objects.get(pk=owner_id)
+        except ProductOwner.DoesNotExist:
+            return JsonResponse({"error": "Owner not found"}, status=404)
+
+        projects = list(Project.objects.filter(owner=owner).values(
+            "id", "name", "description"
+        ))
+        return JsonResponse(projects, safe=False, status=200)
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+@csrf_exempt
+def get_all_projects(request):
+    """
+    GET endpoint to retrieve all projects.
+    URL: /userstorymanager/projects/
+    """
+    if request.method == "GET":
+        projects = list(Project.objects.values(
+            "id", "name", "description", "owner_id"
+        ))
+        return JsonResponse(projects, safe=False, status=200)
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+
+@csrf_exempt
+def update_project(request, project_id):
+    """
+    PUT endpoint to update a project.
+    URL: /userstorymanager/project/<project_id>/update/
+    Expected JSON: {"name": "...", "description": "...", "owner_id": ...}
+    """
+    if request.method == "PUT":
+        try:
+            project = Project.objects.get(pk=project_id)
+        except Project.DoesNotExist:
+            return JsonResponse({"error": "Project not found"}, status=404)
+
+        try:
+            payload = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+        name = payload.get("name")
+        description = payload.get("description")
+        owner_id = payload.get("owner_id")
+
+        if name is not None:
+            project.name = name
+        if description is not None:
+            project.description = description
+        if owner_id is not None:
+            try:
+                owner = ProductOwner.objects.get(pk=owner_id)
+                project.owner = owner
+            except ProductOwner.DoesNotExist:
+                return JsonResponse({"error": "Owner with provided owner_id does not exist"}, status=400)
+
+        project.save()
+        return JsonResponse({"message": "Project updated successfully", "project_id": project.id}, status=200)
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+
+@csrf_exempt
+def delete_project(request, project_id):
+    """
+    DELETE endpoint to delete a project.
+    URL: /userstorymanager/project/<project_id>/delete/
+    """
+    if request.method == "DELETE":
+        try:
+            project = Project.objects.get(pk=project_id)
+        except Project.DoesNotExist:
+            return JsonResponse({"error": "Project not found"}, status=404)
+
+        project.delete()
+        return JsonResponse({"message": "Project deleted successfully"}, status=200)
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+@csrf_exempt
+def create_project(request):
+    """
+    POST endpoint to create a new project.
+    URL: /userstorymanager/project/create/
+    Expected JSON: {"owner_id": ..., "name": "...", "description": "..."}
+    """
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+        owner_id = data.get("owner_id")
+        name = data.get("name")
+        description = data.get("description", "")
+
+        if not owner_id or not name:
+            return JsonResponse({"error": "owner_id and name are required"}, status=400)
+
+        try:
+            owner = ProductOwner.objects.get(pk=owner_id)
+        except ProductOwner.DoesNotExist:
+            return JsonResponse({"error": "Owner not found"}, status=404)
+
+        project = Project.objects.create(
+            name=name,
+            description=description,
+            owner=owner
+        )
+        return JsonResponse({
+            "message": "Project created successfully",
+            "project_id": project.id,
+            "name": project.name,
+            "owner_id": project.owner.id
+        }, status=201)
+    return JsonResponse({"error": "Invalid request method"}, status=405)
