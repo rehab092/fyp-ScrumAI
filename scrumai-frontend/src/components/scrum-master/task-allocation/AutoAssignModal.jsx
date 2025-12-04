@@ -73,7 +73,7 @@ export default function AutoAssignModal({ tasks, teamMembers, onClose, onAssign 
             <div>
               <h2 className="text-2xl font-bold flex items-center gap-2">
                 <span>🧠</span>
-                AI Assignment Suggestions
+                Assignment Suggestions
               </h2>
               <p className="text-white/80 text-sm mt-1">
                 {loading ? "Analyzing tasks and team capacity..." : `${suggestions.length} suggestions generated`}

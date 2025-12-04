@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import Navbar from "../components/Navbar";
-// import { API_ENDPOINTS, apiRequest } from "../config/api"; // TODO: Uncomment when backend is ready
+import { LOGIN_ENDPOINTS, apiRequest } from "../config/api";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -14,6 +14,7 @@ export default function Login() {
     email: "",
     password: "",
   });
+  const [selectedRole, setSelectedRole] = useState('teamMember');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,32 +26,35 @@ export default function Login() {
         throw new Error("Email and password are required");
       }
 
-      // TODO: Uncomment this when backend is ready
-      // API call to backend for authentication
-      // const response = await apiRequest(API_ENDPOINTS.auth.login, {
-      //   method: 'POST',
-      //   body: JSON.stringify({
-      //     email: formData.email,
-      //     password: formData.password,
-      //   }),
-      // });
-      // 
-      // const { user, token } = response;
-      // localStorage.setItem('authToken', token);
-      // const redirectPath = getRedirectPath(user.role);
-      // navigate(redirectPath);
+      // Try to authenticate with backend
+      try {
+        const response = await apiRequest(LOGIN_ENDPOINTS.auth.login, {
+          method: 'POST',
+          body: JSON.stringify({
+            email: formData.email,
+            password: formData.password,
+          }),
+        });
 
-      // TEMPORARY: Mock authentication - Remove when backend is ready
-      let role = "teamMember"; // Default role
-      if (formData.email === "scrum@scrumai.com") {
-        role = "scrumMaster";
-      } else if (formData.email === "owner@scrumai.com") {
-        role = "productOwner";
+        const { user, token } = response;
+        localStorage.setItem('authToken', token);
+        localStorage.setItem('ownerId', user.owner_id);
+
+        // Use backend role if provided, otherwise use selected role
+        const roleToUse = (user && user.role) ? user.role : selectedRole;
+
+        // Pass user data to login function (prefer backend user object if available)
+        const userData = await login(formData.email, formData.password, roleToUse, user || null);
+        const redirectPath = getRedirectPath(roleToUse);
+        navigate(redirectPath);
+      } catch (backendError) {
+        // Fallback to mock authentication if backend fails
+        console.warn('Backend login failed, using mock authentication:', backendError.message);
+
+        const user = await login(formData.email, formData.password, selectedRole);
+        const redirectPath = getRedirectPath(selectedRole);
+        navigate(redirectPath);
       }
-
-      const user = await login(formData.email, formData.password, role);
-      const redirectPath = getRedirectPath(user.role);
-      navigate(redirectPath);
     } catch (err) {
       setError(err.message || "Login failed. Please check your credentials.");
     } finally {
@@ -149,6 +153,21 @@ export default function Login() {
                       className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background text-textPrimary transition-all"
                       placeholder="Enter your email"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-textPrimary mb-2">
+                      Role
+                    </label>
+                    <select
+                      value={selectedRole}
+                      onChange={(e) => setSelectedRole(e.target.value)}
+                      className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background text-textPrimary transition-all"
+                    >
+                      <option value="productOwner">Product Owner</option>
+                      <option value="scrumMaster">Scrum Master</option>
+                      <option value="teamMember">Team Member</option>
+                    </select>
                   </div>
 
                   <div>

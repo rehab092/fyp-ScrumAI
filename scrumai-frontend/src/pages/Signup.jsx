@@ -15,8 +15,11 @@ export default function Signup() {
     email: "",
     password: "",
     confirmPassword: "",
+    company: "",
     role: "teamMember", // Default role for signup
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -24,8 +27,13 @@ export default function Signup() {
     setError("");
 
     try {
-      if (!formData.name.trim() || !formData.email.trim() || !formData.password.trim()) {
-        throw new Error("All fields are required");
+      if (!formData.name.trim() || !formData.email.trim() || !formData.password.trim() || !formData.company.trim()) {
+        throw new Error("All fields are required, including company name.");
+      }
+
+      const emailRegex = /^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$/;
+      if (!emailRegex.test(formData.email.trim())) {
+        throw new Error("Enter a valid email address.");
       }
 
       if (formData.password !== formData.confirmPassword) {
@@ -174,6 +182,34 @@ export default function Signup() {
                       placeholder="Enter your full name"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-textPrimary mb-2">
+                      Company name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.company}
+                      onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+                      className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background text-textPrimary transition-all"
+                      placeholder="Enter your company name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-textPrimary mb-2">
+                      Role
+                    </label>
+                    <select
+                      value={formData.role}
+                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                      className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background text-textPrimary transition-all"
+                    >
+                      <option value="teamMember">Team Member</option>
+                      <option value="productOwner">Product Owner</option>
+                      <option value="scrumMaster">Scrum Master</option>
+                    </select>
+                  </div>
 
                   <div>
                     <label className="block text-sm font-medium text-textPrimary mb-2">
@@ -193,44 +229,63 @@ export default function Signup() {
                     <label className="block text-sm font-medium text-textPrimary mb-2">
                       Password
                     </label>
-                    <input
-                      type="password"
-                      required
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background text-textPrimary transition-all"
-                      placeholder="Create a password"
-                    />
+                    <div className="relative flex items-center">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        required
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background text-textPrimary transition-all pr-10"
+                        placeholder="Create a password"
+                      />
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary-dark"
+                      >
+                        {showPassword ? (
+                          // Eye-off icon
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 3l18 18M19.5 12a7.5 7.5 0 01-13.874 3.376m15.364-3.376A7.5 7.5 0 003.228 7.684M3 3l18 18" /></svg>
+                        ) : (
+                          // Eye icon
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0zm7.5 0a9 9 0 01-15 6.364M21 12A9 9 0 003.227 7.681" /></svg>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-textPrimary mb-2">
                       Confirm password
                     </label>
-                    <input
-                      type="password"
-                      required
-                      value={formData.confirmPassword}
-                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                      className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background text-textPrimary transition-all"
-                      placeholder="Confirm your password"
-                    />
+                    <div className="relative flex items-center">
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        required
+                        value={formData.confirmPassword}
+                        onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                        className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background text-textPrimary transition-all pr-10"
+                        placeholder="Confirm your password"
+                      />
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        onClick={() => setShowConfirmPassword((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary-dark"
+                      >
+                        {showConfirmPassword ? (
+                          // Eye-off icon
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 3l18 18M19.5 12a7.5 7.5 0 01-13.874 3.376m15.364-3.376A7.5 7.5 0 003.228 7.684M3 3l18 18" /></svg>
+                        ) : (
+                          // Eye icon
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0zm7.5 0a9 9 0 01-15 6.364M21 12A9 9 0 003.227 7.681" /></svg>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-textPrimary mb-2">
-                      Role
-                    </label>
-                    <select
-                      value={formData.role}
-                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                      className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background text-textPrimary transition-all"
-                    >
-                      <option value="teamMember">Team Member</option>
-                      <option value="productOwner">Product Owner</option>
-                      <option value="scrumMaster">Scrum Master</option>
-                    </select>
-                  </div>
+                  {/* Role selection removed. Role is set to 'teamMember' by default in formData. */}
                 </div>
 
                 <button
