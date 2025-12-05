@@ -23,6 +23,8 @@ INSTALLED_APPS = [
     # third-party
     # "rest_framework",  # add later when you start APIs
     # local apps
+    # New Module 2 App
+    "assignment_module",
 ]
 
 REST_FRAMEWORK = {

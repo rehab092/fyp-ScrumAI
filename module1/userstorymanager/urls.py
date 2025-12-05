@@ -1,5 +1,9 @@
 from django.urls import path
 from . import views
+from django.urls import path, include
+from django.contrib import admin
+
+
 
 urlpatterns = [
     path('', views.product_owner_list, name='owner_list'),
@@ -23,4 +27,6 @@ path('owner_by_email/', views.get_product_owner_by_email, name='owner_by_email')
     path('project/<int:project_id>/update/', views.update_project, name='update_project'),  # Update project
     path('project/<int:project_id>/delete/', views.delete_project, name='delete_project'),  # Delete project
     path('project/create/', views.create_project, name='create_project'),  # Create a new project
+    
+
 ]
