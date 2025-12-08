@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import TeamCapacityOverview from "./task-allocation/TeamCapacityOverview";
 import TaskPool from "./task-allocation/TaskPool";
@@ -7,6 +7,8 @@ import TaskAssignmentBoard from "./task-allocation/TaskAssignmentBoard";
 import WorkloadCharts from "./task-allocation/WorkloadCharts";
 import AlertsPanel from "./task-allocation/AlertsPanel";
 import TaskDetailModal from "./task-allocation/TaskDetailModal";
+import TeamMemberDetailModal from "./TeamMemberDetailModal";
+import { LOGIN_ENDPOINTS, apiRequest } from "../../config/api";
 
 export default function TaskAllocationHelper() {
   const [viewMode, setViewMode] = useState("overview"); // overview, pool, board, charts
@@ -14,50 +16,59 @@ export default function TaskAllocationHelper() {
   const [showTaskDetail, setShowTaskDetail] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
   const [showAlerts, setShowAlerts] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [selectedMemberId, setSelectedMemberId] = useState(null);
 
-  // Mock data - replace with actual API calls
-  const [teamMembers, setTeamMembers] = useState([
-    {
-      id: "dev01",
-      name: "Ayesha Khan",
-      role: "Frontend Developer",
-      skills: ["React", "Tailwind", "TypeScript"],
-      capacityHours: 40,
-      assignedHours: 28,
-      avatar: "AK",
-      status: "active"
-    },
-    {
-      id: "dev02",
-      name: "Ahmed Ali",
-      role: "Backend Developer",
-      skills: ["Node.js", "MongoDB", "Express"],
-      capacityHours: 40,
-      assignedHours: 35,
-      avatar: "AA",
-      status: "high"
-    },
-    {
-      id: "dev03",
-      name: "Fatima Hassan",
-      role: "Full Stack Developer",
-      skills: ["React", "Node.js", "MongoDB", "AWS"],
-      capacityHours: 40,
-      assignedHours: 15,
-      avatar: "FH",
-      status: "free"
-    },
-    {
-      id: "dev04",
-      name: "Omar Malik",
-      role: "DevOps Engineer",
-      skills: ["Docker", "Kubernetes", "AWS", "CI/CD"],
-      capacityHours: 40,
-      assignedHours: 42,
-      avatar: "OM",
-      status: "overloaded"
-    }
-  ]);
+  // Fetch team members from API
+  const [teamMembers, setTeamMembers] = useState([]);
+
+  useEffect(() => {
+    const fetchTeamMembers = async () => {
+      try {
+        setLoading(true);
+        const response = await apiRequest(LOGIN_ENDPOINTS.team.getAll, {
+          method: "GET",
+        });
+        
+        // Transform API response to match component format
+        const transformedMembers = Array.isArray(response) 
+          ? response.map((member, index) => {
+              const assignedHours = member.assignedHours || 0;
+              const capacityHours = member.capacityHours || 40;
+              const percentage = (assignedHours / capacityHours) * 100;
+              
+              let status = "active";
+              if (percentage >= 100) status = "overloaded";
+              else if (percentage >= 80) status = "high";
+              else if (percentage < 50) status = "free";
+              
+              // Get the actual ID from API - try multiple possible field names
+              const memberId = member.id || member.pk || member.member_id || member.team_member_id || member.user_id;
+              
+              return {
+                id: memberId || `dev${index + 1}`, // Use actual ID from API
+                name: member.name || "Unknown",
+                role: member.role || "Team Member",
+                skills: member.skills || [],
+                capacityHours: capacityHours,
+                assignedHours: assignedHours,
+                avatar: member.name ? member.name.split(' ').map(n => n[0]).join('').toUpperCase() : "TM",
+                status: status
+              };
+            })
+          : [];
+        
+        setTeamMembers(transformedMembers);
+      } catch (err) {
+        console.error('Error fetching team members:', err);
+        setTeamMembers([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTeamMembers();
+  }, []);
 
   const [tasks, setTasks] = useState([
     {
@@ -300,7 +311,7 @@ export default function TaskAllocationHelper() {
         {viewMode === "overview" && (
           <TeamCapacityOverview 
             teamMembers={teamMembers} 
-            onMemberClick={(member) => console.log("Member clicked:", member)}
+            onMemberClick={(member) => setSelectedMemberId(member.id)}
           />
         )}
         {viewMode === "pool" && (
@@ -350,6 +361,14 @@ export default function TaskAllocationHelper() {
           alerts={alerts}
           onClose={() => setShowAlerts(false)}
           onResolve={(alertId) => setAlerts(alerts.filter(a => a.id !== alertId))}
+        />
+      )}
+
+      {/* Team Member Detail Modal */}
+      {selectedMemberId && (
+        <TeamMemberDetailModal
+          memberId={selectedMemberId}
+          onClose={() => setSelectedMemberId(null)}
         />
       )}
     </div>

@@ -23,12 +23,19 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-  const login = async (email, password, role) => {
-    // Simulate API call
+  const login = async (email, password, role, backendUser = null) => {
     setLoading(true);
     
-    // Mock authentication - in real app, this would be an API call
-    const mockUser = {
+    // Use backend user data if provided, otherwise create mock
+    const userData = backendUser ? {
+      id: backendUser.id,
+      email: backendUser.email,
+      role: backendUser.role,
+      name: backendUser.name,
+      type: backendUser.type, // MANAGEMENT or TEAM_MEMBER
+      avatar: (backendUser.name || email).split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2),
+      loginTime: new Date().toISOString()
+    } : {
       id: Date.now(),
       email,
       role,
@@ -37,14 +44,11 @@ export const AuthProvider = ({ children }) => {
       loginTime: new Date().toISOString()
     };
 
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    setUser(mockUser);
-    localStorage.setItem('scrumai_user', JSON.stringify(mockUser));
-    setLoading(false);
+    setUser(userData);
+    localStorage.setItem('scrumai_user', JSON.stringify(userData));
     
-    return mockUser;
+    setLoading(false);
+    return userData;
   };
 
   const signup = async (name, email, password, role) => {
@@ -77,14 +81,22 @@ export const AuthProvider = ({ children }) => {
   };
 
   const getRedirectPath = (role) => {
-    switch (role) {
-      case 'scrumMaster':
+    // Normalize role to uppercase for comparison
+    const normalizedRole = (role || '').toUpperCase().replace(/[\s-]/g, '_');
+    
+    switch (normalizedRole) {
+      case 'SCRUM_MASTER':
+      case 'SCRUMMASTER':
         return '/scrum-master';
-      case 'productOwner':
+      case 'PRODUCT_OWNER':
+      case 'PRODUCTOWNER':
         return '/product-owner';
-      case 'teamMember':
+      case 'DEVELOPER':
+      case 'TEAM_MEMBER':
+      case 'TEAMMEMBER':
       default:
-        return '/portal';
+        // Team members/developers go to their focused personal portal
+        return '/team-member';
     }
   };
 
@@ -104,6 +116,7 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
+
 
 
 

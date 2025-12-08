@@ -1,11 +1,33 @@
 // API Configuration
-// Base URL for the backend API - Update this when backend is deployed
-const API_BASE_URL =  'http://127.0.0.1:8000/';
+// Base URL for the backend API
+// Using direct URL since proxy may have issues
+const API_BASE_URL = 'http://localhost:8000/';
+
+// For direct backend calls (bypassing proxy), use this:
+const DIRECT_API_BASE_URL = 'http://localhost:8000/';
+
+// Match the pattern of old APIs:
+// Old APIs: http://localhost:8000/userstories/...
+// So module2 should be: http://localhost:8000/module2/... (if Django main urls.py has path('module2/', include(...)))
+// OR: http://localhost:8000/api/module2/... (if Django main urls.py has path('api/module2/', include(...)))
+// 
+// Check your Django main urls.py file to see how module2 is included:
+// - If it's: path('module2/', include('assignment_module.urls')) → use 'module2/'
+// - If it's: path('api/module2/', include('assignment_module.urls')) → use 'api/module2/'
+//
+// Using direct backend URL
+const MODULE2_BASE_URL = `${API_BASE_URL}api/module2/`;
 
 // API Endpoints
 export const LOGIN_ENDPOINTS = {
   // Authentication Endpoints
   auth: {
+    // Admin Auth
+    registerWorkspace: `${MODULE2_BASE_URL}auth/register-workspace/`,
+    adminLogin: `${MODULE2_BASE_URL}auth/login/`,
+    // Role Login (SM/PO/Dev)
+    roleLogin: `${MODULE2_BASE_URL}auth/login-user/`,
+    // Legacy endpoints
     login: `${API_BASE_URL}userstories/login/`,
     signup: `${API_BASE_URL}userstories/create/`,
   },
@@ -13,12 +35,12 @@ export const LOGIN_ENDPOINTS = {
   // User Stories / Backlog Endpoints
   userStories: {
     getAll: `${API_BASE_URL}userstories/tasks/`, // Get all tasks with user stories
-    create: `${API_BASE_URL}/userstories`,
-    createBulk: `${API_BASE_URL}/userstories/bulk`,
+    create: `${API_BASE_URL}userstories`,
+    createBulk: `${API_BASE_URL}userstories/bulk`,
     upload: `${API_BASE_URL}userstories/create_backlog/`, // Upload with FormData
-    getById: (id) => `${API_BASE_URL}/userstories/${id}`,
-    update: (id) => `${API_BASE_URL}/userstories/${id}`,
-    delete: (id) => `${API_BASE_URL}/userstories/${id}`,
+    getById: (id) => `${API_BASE_URL}userstories/${id}`,
+    update: (id) => `${API_BASE_URL}userstories/${id}`,
+    delete: (id) => `${API_BASE_URL}userstories/${id}`,
   },
 
   // // Backlog Endpoints
@@ -31,15 +53,15 @@ export const LOGIN_ENDPOINTS = {
 
   // Sprint Endpoints
   sprints: {
-    getAll: `${API_BASE_URL}/sprints`,
-    create: `${API_BASE_URL}/sprints`,
-    getById: (id) => `${API_BASE_URL}/sprints/${id}`,
-    update: (id) => `${API_BASE_URL}/sprints/${id}`,
-    delete: (id) => `${API_BASE_URL}/sprints/${id}`,
+    getAll: `${API_BASE_URL}sprints`,
+    create: `${API_BASE_URL}sprints`,
+    getById: (id) => `${API_BASE_URL}sprints/${id}`,
+    update: (id) => `${API_BASE_URL}sprints/${id}`,
+    delete: (id) => `${API_BASE_URL}sprints/${id}`,
   },
   projects: {
     getAll: `${API_BASE_URL}projects/`, // Get all projects
-    getByOwner: (ownerId) => `${API_BASE_URL}/userstories/projects/owner/${ownerId}/`, // Get projects by owner
+    getByOwner: (ownerId) => `${API_BASE_URL}userstories/projects/owner/${ownerId}/`, // Get projects by owner
   },
 
   // Tasks Endpoints
@@ -49,20 +71,40 @@ export const LOGIN_ENDPOINTS = {
     update: (taskId) => `${API_BASE_URL}userstories/task/${taskId}/update/`, // Update task
     delete: (taskId) => `${API_BASE_URL}userstories/task/${taskId}/delete/`, // Delete task
   },
+
+  // Team Members Endpoints (require Workspace-ID header)
+  team: {
+    add: `${MODULE2_BASE_URL}team/add/`, // Add team member (POST)
+    getAll: `${MODULE2_BASE_URL}team/all/`, // Get all team members (GET)
+    getById: (id) => `${MODULE2_BASE_URL}team/${id}/`, // Get team member by ID (GET)
+    update: (id) => `${MODULE2_BASE_URL}team/update/${id}/`, // Update team member (PATCH)
+    delete: (id) => `${MODULE2_BASE_URL}team/delete/${id}/`, // Delete team member (DELETE)
+  },
+
+  // Management Roles Endpoints (require Workspace-ID header)
+  management: {
+    addManagementUser: `${MODULE2_BASE_URL}roles/add-management-user/`, // Add Scrum Master or Product Owner (POST)
+    getScrumMasters: `${MODULE2_BASE_URL}roles/get-scrum-masters/`, // Get all Scrum Masters (GET)
+    getProductOwners: `${MODULE2_BASE_URL}roles/get-product-owners/`, // Get all Product Owners (GET)
+  },
 };
 
 // API Helper Functions
 export const apiRequest = async (url, options = {}) => {
   try {
     const token = localStorage.getItem('authToken');
+    const workspaceId = localStorage.getItem('workspaceId');
     
     const defaultHeaders = {
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
       ...(token && { 'Authorization': `Bearer ${token}` }),
+      ...(workspaceId && { 'Workspace-ID': workspaceId }), // Add Workspace-ID header if available
     };
 
     const config = {
       ...options,
+      mode: 'cors', // Enable CORS mode
       headers: {
         ...defaultHeaders,
         ...options.headers,
@@ -71,9 +113,67 @@ export const apiRequest = async (url, options = {}) => {
 
     const response = await fetch(url, config);
     
+    // Check if response is JSON
+    const contentType = response.headers.get('content-type');
+    const isJson = contentType && contentType.includes('application/json');
+    
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'API request failed');
+      let errorMessage = `API request failed with status ${response.status}`;
+      
+      if (isJson) {
+        try {
+          const error = await response.json();
+          // Handle different error response formats
+          if (error.message) {
+            errorMessage = error.message;
+          } else if (error.error) {
+            errorMessage = error.error;
+          } else if (error.detail) {
+            errorMessage = error.detail;
+          } else if (error.non_field_errors) {
+            errorMessage = Array.isArray(error.non_field_errors) 
+              ? error.non_field_errors.join(', ') 
+              : error.non_field_errors;
+          } else if (typeof error === 'string') {
+            errorMessage = error;
+          } else if (Object.keys(error).length > 0) {
+            // Handle field-level errors (e.g., {email: ["This field is required"]})
+            const fieldErrors = Object.entries(error)
+              .map(([field, messages]) => {
+                const msg = Array.isArray(messages) ? messages.join(', ') : messages;
+                return `${field}: ${msg}`;
+              })
+              .join('; ');
+            errorMessage = fieldErrors || errorMessage;
+          }
+        } catch (e) {
+          // If JSON parsing fails, use default message
+          console.error('Error parsing JSON response:', e);
+        }
+      } else {
+        // If response is HTML (error page), try to get text
+        try {
+          const text = await response.text();
+          if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+            errorMessage = `Server returned HTML instead of JSON. The endpoint may not exist or there's a server error. Status: ${response.status}`;
+          } else {
+            errorMessage = text || errorMessage;
+          }
+        } catch (e) {
+          // Use default error message
+        }
+      }
+      
+      throw new Error(errorMessage);
+    }
+
+    // Check if response is JSON before parsing
+    if (!isJson) {
+      const text = await response.text();
+      if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+        throw new Error('Server returned HTML instead of JSON. The endpoint may not exist or there\'s a server error.');
+      }
+      throw new Error('Response is not valid JSON');
     }
 
     return await response.json();
@@ -83,9 +183,15 @@ export const apiRequest = async (url, options = {}) => {
       error.message &&
       error.message.includes('Failed to fetch')
     ) {
-      alert('Network error or CORS issue: Please ensure the backend server is running and CORS is enabled.');
+      const errorMsg = 'Network error or CORS issue: Please ensure the backend server is running at ' + url + ' and CORS is enabled.';
+      console.error('API Request Error:', error);
+      console.error('Request URL:', url);
+      console.error('Request Options:', JSON.stringify(options, null, 2));
+      throw new Error(errorMsg);
     }
     console.error('API Request Error:', error);
+    console.error('Request URL:', url);
+    console.error('Request Options:', JSON.stringify(options, null, 2));
     throw error;
   }
 };
@@ -129,5 +235,7 @@ export const apiRequestFormData = async (url, formData) => {
 };
  
 export default LOGIN_ENDPOINTS;
+
+
 
 

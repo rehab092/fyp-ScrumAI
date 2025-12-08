@@ -15,10 +15,10 @@ export default function CTA() {
         </p>
         <div className="flex flex-col sm:flex-row justify-center gap-6">
           <button 
-            onClick={() => navigate('/signup')}
+            onClick={() => navigate('/workspace/register')}
             className="bg-primary text-background px-8 py-3 rounded-xl font-semibold hover:bg-primaryDark hover:scale-105 transition-all"
           >
-            Start Free Trial
+            Create Your Workspace
           </button>
           <button 
             onClick={() => navigate('/pricing')}

@@ -14,7 +14,6 @@ export default function Login() {
     email: "",
     password: "",
   });
-  const [selectedRole, setSelectedRole] = useState('teamMember');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -26,36 +25,37 @@ export default function Login() {
         throw new Error("Email and password are required");
       }
 
-      // Try to authenticate with backend
-      try {
-        const response = await apiRequest(LOGIN_ENDPOINTS.auth.login, {
-          method: 'POST',
-          body: JSON.stringify({
-            email: formData.email,
-            password: formData.password,
-          }),
-        });
+      // Use the role-based login endpoint (auth/login-user/)
+      // Backend determines the role from DB (SCRUM_MASTER, PRODUCT_OWNER, or DEVELOPER)
+      const response = await fetch(LOGIN_ENDPOINTS.auth.roleLogin, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+        }),
+      });
 
-        const { user, token } = response;
-        localStorage.setItem('authToken', token);
-        localStorage.setItem('ownerId', user.owner_id);
+      const data = await response.json();
 
-        // Use backend role if provided, otherwise use selected role
-        const roleToUse = (user && user.role) ? user.role : selectedRole;
-
-        // Pass user data to login function (prefer backend user object if available)
-        const userData = await login(formData.email, formData.password, roleToUse, user || null);
-        const redirectPath = getRedirectPath(roleToUse);
-        navigate(redirectPath);
-      } catch (backendError) {
-        // Fallback to mock authentication if backend fails
-        console.warn('Backend login failed, using mock authentication:', backendError.message);
-
-        const user = await login(formData.email, formData.password, selectedRole);
-        const redirectPath = getRedirectPath(selectedRole);
-        navigate(redirectPath);
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Invalid email or password");
       }
+
+      const { user } = data;
+      
+      // Login with backend user data - role comes from backend
+      const userData = await login(formData.email, formData.password, user.role, user);
+      
+      // Redirect based on backend-determined role
+      const redirectPath = getRedirectPath(user.role);
+      console.log(`User role: ${user.role}, redirecting to: ${redirectPath}`);
+      navigate(redirectPath);
+      
     } catch (err) {
+      console.error('Login error:', err);
       setError(err.message || "Login failed. Please check your credentials.");
     } finally {
       setLoading(false);
@@ -129,7 +129,10 @@ export default function Login() {
               <div className="text-center mb-8">
                 <h2 className="text-3xl font-bold text-textPrimary mb-2">Welcome Back</h2>
                 <p className="text-textSecondary">
-                  Sign in to your ScrumAI workspace
+                  Sign in to your ScrumAI account
+                </p>
+                <p className="text-xs text-textMuted mt-2">
+                  Your role (Scrum Master, Product Owner, or Developer) will be detected automatically
                 </p>
               </div>
 
@@ -153,21 +156,6 @@ export default function Login() {
                       className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background text-textPrimary transition-all"
                       placeholder="Enter your email"
                     />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-textPrimary mb-2">
-                      Role
-                    </label>
-                    <select
-                      value={selectedRole}
-                      onChange={(e) => setSelectedRole(e.target.value)}
-                      className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background text-textPrimary transition-all"
-                    >
-                      <option value="productOwner">Product Owner</option>
-                      <option value="scrumMaster">Scrum Master</option>
-                      <option value="teamMember">Team Member</option>
-                    </select>
                   </div>
 
                   <div>
@@ -200,23 +188,30 @@ export default function Login() {
                       Signing in...
                     </div>
                   ) : (
-                    "Login"
+                    "Sign In"
                   )}
                 </button>
 
-                <div className="text-center">
-                  <p className="text-textSecondary text-sm">
-                    Don't have an account?{" "}
-                    <button
-                      type="button"
-                      onClick={() => navigate('/signup')}
-                      className="text-primary hover:text-primaryDark font-medium transition-colors"
-                    >
-                      Sign up
-                    </button>
+                {/* Role Info */}
+                <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 mt-4">
+                  <p className="text-xs text-textSecondary text-center">
+                    <span className="font-semibold text-primary">🎯 Scrum Master</span> • 
+                    <span className="font-semibold text-secondary"> 📋 Product Owner</span> • 
+                    <span className="font-semibold text-accent"> 💻 Developer</span>
                   </p>
                 </div>
+
               </form>
+
+              <div className="text-sm text-textSecondary mt-6 text-center">
+                Don't have an account?{" "}
+                <button
+                  onClick={() => navigate("/workspace/register")}
+                  className="text-primary font-semibold hover:underline transition-colors"
+                >
+                  Create a Workspace
+                </button>
+              </div>
             </div>
           </motion.div>
         </div>

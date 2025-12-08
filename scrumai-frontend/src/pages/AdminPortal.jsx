@@ -1,48 +1,61 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
-import ScrumMasterDashboard from "../components/scrum-master/ScrumMasterDashboard";
-import TeamOverview from "../components/scrum-master/TeamOverview";
-import SprintManagement from "../components/scrum-master/SprintManagement";
-import ResourcePlanning from "../components/scrum-master/ResourcePlanning";
-import DependencyMonitor from "../components/scrum-master/DependencyMonitor";
-import Reports from "../components/scrum-master/Reports";
-import TaskAllocationHelper from "../components/scrum-master/TaskAllocationHelper";
+import AdminDashboard from "../components/admin/AdminDashboard";
+import TeamManagement from "../components/admin/TeamManagement";
+import WorkspaceSettings from "../components/admin/WorkspaceSettings";
+import { LOGIN_ENDPOINTS, apiRequest } from "../config/api";
 
-export default function ScrumMasterPortal() {
+export default function AdminPortal() {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [workspaceInfo, setWorkspaceInfo] = useState(null);
 
   const navigationItems = [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
-    { id: "taskAllocation", label: "Task Allocation", icon: "🧩" },
-    { id: "team", label: "Team Overview", icon: "👥" },
-    { id: "sprints", label: "Sprint Management", icon: "🗓️" },
-    { id: "resources", label: "Resource Planning", icon: "📈" },
-    { id: "dependencies", label: "Dependency Monitor", icon: "🔗" },
-    { id: "reports", label: "Reports", icon: "📋" }
+    { id: "team", label: "Team Management", icon: "👥" },
+    { id: "settings", label: "Workspace Settings", icon: "⚙️" }
   ];
+
+  // Fetch workspace info
+  useEffect(() => {
+    const fetchWorkspaceInfo = async () => {
+      try {
+        const workspaceId = localStorage.getItem('workspaceId');
+        const workspaceName = localStorage.getItem('workspaceName');
+        const companyName = localStorage.getItem('companyName');
+        const adminName = localStorage.getItem('adminName');
+        const adminEmail = localStorage.getItem('adminEmail');
+
+        if (workspaceId) {
+          setWorkspaceInfo({
+            id: workspaceId,
+            workspaceName: workspaceName || "My Workspace",
+            companyName: companyName || "My Company",
+            adminName: adminName || "Admin",
+            adminEmail: adminEmail || ""
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching workspace info:', err);
+      }
+    };
+
+    fetchWorkspaceInfo();
+  }, []);
 
   const renderContent = () => {
     switch (activeTab) {
       case "dashboard":
-        return <ScrumMasterDashboard />;
-      case "taskAllocation":
-        return <TaskAllocationHelper />;
+        return <AdminDashboard workspaceInfo={workspaceInfo} onNavigateToTeam={() => setActiveTab("team")} />;
       case "team":
-        return <TeamOverview />;
-      case "sprints":
-        return <SprintManagement />;
-      case "resources":
-        return <ResourcePlanning />;
-      case "dependencies":
-        return <DependencyMonitor />;
-      case "reports":
-        return <Reports />;
+        return <TeamManagement workspaceInfo={workspaceInfo} />;
+      case "settings":
+        return <WorkspaceSettings workspaceInfo={workspaceInfo} />;
       default:
-        return <ScrumMasterDashboard />;
+        return <AdminDashboard workspaceInfo={workspaceInfo} onNavigateToTeam={() => setActiveTab("team")} />;
     }
   };
 
@@ -64,41 +77,38 @@ export default function ScrumMasterPortal() {
             </button>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gradient-to-r from-secondary to-accent rounded-xl flex items-center justify-center shadow-lg ring-2 ring-white/20">
-                <span className="text-white font-bold text-lg">S</span>
+                <span className="text-white font-bold text-lg">A</span>
               </div>
               <div>
                 <h1 className="text-lg md:text-2xl font-bold text-white tracking-wide drop-shadow-sm">
-                  ScrumAI
+                  ScrumAI Admin
                 </h1>
+                {workspaceInfo && (
+                  <p className="text-xs text-white/80">
+                    {workspaceInfo.workspaceName} • {workspaceInfo.companyName}
+                  </p>
+                )}
               </div>
             </div>
           </div>
 
           {/* Right side */}
           <div className="flex items-center gap-4">
-            {/* Quick Stats */}
-            <div className="hidden lg:flex items-center gap-4 text-sm">
-              <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
-                <div className="w-2 h-2 bg-success rounded-full animate-pulse"></div>
-                <span className="text-white font-medium">Sprint Active</span>
+            {/* Workspace Info */}
+            {workspaceInfo && (
+              <div className="hidden lg:flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
+                <span className="text-white text-sm font-medium">
+                  Welcome, {workspaceInfo.adminName}
+                </span>
               </div>
-              <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
-                <span className="text-white font-semibold">87%</span>
-                <span className="text-white/80">Progress</span>
-              </div>
-            </div>
+            )}
 
-            <div className="hidden md:flex items-center gap-2 text-sm text-white/80">
-              <span>Welcome back,</span>
-              <span className="text-white font-medium">{user?.name || "Scrum Master"}</span>
-            </div>
-            
             <div className="relative">
               <button
                 onClick={() => setProfileOpen(!profileOpen)}
                 className="w-10 h-10 rounded-full bg-gradient-to-r from-secondary to-accent text-white font-bold flex items-center justify-center shadow-lg hover:shadow-xl transition-all ring-2 ring-white/20"
               >
-                {user?.avatar || "SM"}
+                {workspaceInfo?.adminName?.split(' ').map(n => n[0]).join('').toUpperCase() || "AD"}
               </button>
               
               {/* Profile Dropdown */}
@@ -110,10 +120,10 @@ export default function ScrumMasterPortal() {
                   className="absolute right-0 mt-2 w-56 bg-white border border-border rounded-xl shadow-xl py-2 z-50 backdrop-blur-sm"
                 >
                   <div className="px-4 py-3 border-b border-border">
-                    <p className="text-sm font-semibold text-textPrimary">{user?.name || "Scrum Master"}</p>
-                    <p className="text-xs text-textSecondary">{user?.email || "scrum@scrumai.com"}</p>
+                    <p className="text-sm font-semibold text-textPrimary">{workspaceInfo?.adminName || "Admin"}</p>
+                    <p className="text-xs text-textSecondary">{workspaceInfo?.adminEmail || "admin@workspace.com"}</p>
                     <div className="mt-2 px-2 py-1 bg-primary/10 rounded-lg">
-                      <span className="text-xs text-primary font-medium">Scrum Master</span>
+                      <span className="text-xs text-primary font-medium">Workspace Admin</span>
                     </div>
                   </div>
                   
@@ -123,12 +133,8 @@ export default function ScrumMasterPortal() {
                       Profile Settings
                     </button>
                     <button className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2">
-                      <span>👥</span>
-                      Team Management
-                    </button>
-                    <button className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2">
-                      <span>📊</span>
-                      Analytics
+                      <span>⚙️</span>
+                      Workspace Settings
                     </button>
                     <button className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2">
                       <span>❓</span>
@@ -174,9 +180,12 @@ export default function ScrumMasterPortal() {
           <div className="p-6">
             <div className="mb-6">
               <div className="w-12 h-12 bg-gradient-to-r from-secondary to-accent rounded-xl flex items-center justify-center shadow-lg mb-3 ring-2 ring-white/20">
-                <span className="text-white font-bold text-xl">S</span>
+                <span className="text-white font-bold text-xl">A</span>
               </div>
-              <h2 className="text-white font-bold text-lg drop-shadow-sm">Scrum Master Portal</h2>
+              <h2 className="text-white font-bold text-lg drop-shadow-sm">Admin Portal</h2>
+              {workspaceInfo && (
+                <p className="text-white/80 text-xs mt-1">{workspaceInfo.workspaceName}</p>
+              )}
             </div>
             
             <nav className="space-y-2">
@@ -204,11 +213,21 @@ export default function ScrumMasterPortal() {
         {/* Desktop Sidebar */}
         <aside className="hidden lg:block w-72 bg-white/98 backdrop-blur-sm border-r border-border shadow-xl fixed left-0 h-full overflow-y-auto">
           <div className="p-6">
+            {workspaceInfo && (
+              <div className="mb-6 p-4 bg-gradient-to-br from-primary/10 to-secondary/10 rounded-xl border border-primary/20">
+                <h3 className="text-sm font-semibold text-textPrimary mb-1">{workspaceInfo.workspaceName}</h3>
+                <p className="text-xs text-textSecondary">{workspaceInfo.companyName}</p>
+                <div className="mt-2 pt-2 border-t border-primary/20">
+                  <p className="text-xs text-textMuted">Admin: {workspaceInfo.adminName}</p>
+                </div>
+              </div>
+            )}
             
             <nav className="space-y-2">
               {navigationItems.map((item) => (
                 <button
                   key={item.id}
+                  data-tab={item.id}
                   onClick={() => setActiveTab(item.id)}
                   className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-300 ${
                     activeTab === item.id
@@ -240,3 +259,4 @@ export default function ScrumMasterPortal() {
     </div>
   );
 }
+

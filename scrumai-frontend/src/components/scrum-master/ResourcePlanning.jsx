@@ -1,63 +1,60 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { LOGIN_ENDPOINTS, apiRequest } from "../../config/api";
+import TeamMemberDetailModal from "./TeamMemberDetailModal";
 
 export default function ResourcePlanning() {
   const [viewMode, setViewMode] = useState("capacity"); // 'capacity', 'allocation', 'forecasting'
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedMemberId, setSelectedMemberId] = useState(null);
 
-  const teamMembers = [
-    {
-      id: 1,
-      name: "Sarah Chen",
-      role: "Frontend Developer",
-      skills: ["React", "TypeScript", "CSS", "UI/UX"],
-      capacity: 10,
-      currentLoad: 8,
-      availability: "Available",
-      hourlyRate: 75,
-      timezone: "PST",
-      projects: ["ScrumAI Frontend", "Component Library"],
-      utilization: 80
-    },
-    {
-      id: 2,
-      name: "Mike Johnson",
-      role: "Backend Developer",
-      skills: ["Node.js", "Python", "Database", "API"],
-      capacity: 10,
-      currentLoad: 9,
-      availability: "Busy",
-      hourlyRate: 80,
-      timezone: "EST",
-      projects: ["ScrumAI Backend", "API Development"],
-      utilization: 90
-    },
-    {
-      id: 3,
-      name: "Emma Davis",
-      role: "Full Stack Developer",
-      skills: ["React", "Node.js", "Database", "DevOps"],
-      capacity: 10,
-      currentLoad: 7,
-      availability: "Available",
-      hourlyRate: 85,
-      timezone: "GMT",
-      projects: ["ScrumAI Full Stack", "Integration"],
-      utilization: 70
-    },
-    {
-      id: 4,
-      name: "Alex Rodriguez",
-      role: "DevOps Engineer",
-      skills: ["AWS", "Docker", "CI/CD", "Monitoring"],
-      capacity: 10,
-      currentLoad: 5,
-      availability: "Available",
-      hourlyRate: 90,
-      timezone: "PST",
-      projects: ["Infrastructure", "Deployment"],
-      utilization: 50
-    }
-  ];
+  // Fetch team members from API
+  useEffect(() => {
+    const fetchTeamMembers = async () => {
+      try {
+        setLoading(true);
+        const response = await apiRequest(LOGIN_ENDPOINTS.team.getAll, {
+          method: "GET",
+        });
+        
+        // Transform API response to match component format
+        const transformedMembers = Array.isArray(response) 
+          ? response.map((member, index) => {
+              const assignedHours = member.assignedHours || 0;
+              const capacityHours = member.capacityHours || 40;
+              const utilization = Math.round((assignedHours / capacityHours) * 100);
+              
+              // Get the actual ID from API - try multiple possible field names
+              const memberId = member.id || member.pk || member.member_id || member.team_member_id || member.user_id;
+              
+              return {
+                id: memberId || index + 1, // Use actual ID from API
+                name: member.name || "Unknown",
+                role: member.role || "Team Member",
+                skills: member.skills || [],
+                capacity: Math.floor(capacityHours / 4), // Convert to capacity points
+                currentLoad: Math.floor(assignedHours / 4),
+                availability: utilization >= 90 ? "Busy" : utilization < 50 ? "Available" : "Available",
+                hourlyRate: member.hourlyRate || 75,
+                timezone: member.timezone || "PST",
+                projects: member.projects || [],
+                utilization: utilization
+              };
+            })
+          : [];
+        
+        setTeamMembers(transformedMembers);
+      } catch (err) {
+        console.error('Error fetching team members:', err);
+        setTeamMembers([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTeamMembers();
+  }, []);
 
   const upcomingProjects = [
     {
@@ -173,6 +170,16 @@ export default function ResourcePlanning() {
           >
             <h2 className="text-xl font-bold text-sandTan mb-6">Team Capacity Overview</h2>
             
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sandTan mx-auto mb-2"></div>
+                <p className="text-textMuted">Loading team members...</p>
+              </div>
+            ) : teamMembers.length === 0 ? (
+              <div className="text-center py-8 text-textMuted">
+                No team members found.
+              </div>
+            ) : (
             <div className="space-y-4">
               {teamMembers.map((member, index) => (
                 <div key={member.id} className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-4">
@@ -232,6 +239,7 @@ export default function ResourcePlanning() {
                 </div>
               ))}
             </div>
+            )}
           </motion.div>
 
           {/* Capacity Metrics */}
@@ -268,6 +276,16 @@ export default function ResourcePlanning() {
           >
             <h2 className="text-xl font-bold text-sandTan mb-6">Current Project Allocations</h2>
             
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sandTan mx-auto mb-2"></div>
+                <p className="text-textMuted">Loading team members...</p>
+              </div>
+            ) : teamMembers.length === 0 ? (
+              <div className="text-center py-8 text-textMuted">
+                No team members found.
+              </div>
+            ) : (
             <div className="space-y-4">
               {teamMembers.map((member, index) => (
                 <div key={member.id} className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-4">
@@ -288,18 +306,25 @@ export default function ResourcePlanning() {
                   </div>
                   
                   <div className="space-y-2">
-                    {member.projects.map((project, projectIndex) => (
+                    {member.projects && member.projects.length > 0 ? (
+                      member.projects.map((project, projectIndex) => (
                       <div key={projectIndex} className="flex items-center justify-between bg-nightBlueShadow/50 rounded-lg p-2">
                         <span className="text-textLight text-sm">{project}</span>
                         <span className="text-sandTan text-sm font-semibold">
                           {Math.round(member.currentLoad / member.projects.length)} pts
                         </span>
                       </div>
-                    ))}
+                      ))
+                    ) : (
+                      <div className="text-textMuted text-sm text-center py-2">
+                        No projects assigned
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
+            )}
           </motion.div>
 
           {/* Upcoming Projects */}
@@ -417,6 +442,14 @@ export default function ResourcePlanning() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Team Member Detail Modal */}
+      {selectedMemberId && (
+        <TeamMemberDetailModal
+          memberId={selectedMemberId}
+          onClose={() => setSelectedMemberId(null)}
+        />
       )}
     </div>
   );

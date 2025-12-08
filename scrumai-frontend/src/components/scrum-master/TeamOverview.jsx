@@ -1,92 +1,141 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { LOGIN_ENDPOINTS, apiRequest } from "../../config/api";
+import TeamMemberDetailModal from "./TeamMemberDetailModal";
 
 export default function TeamOverview() {
   const [viewMode, setViewMode] = useState("overview"); // 'overview', 'performance', 'capacity'
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedMemberId, setSelectedMemberId] = useState(null);
+  const [editingMember, setEditingMember] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
 
-  const teamMembers = [
-    {
-      id: 1,
-      name: "Sarah Chen",
-      role: "Frontend Developer",
-      email: "sarah@example.com",
-      avatar: "SC",
-      skills: ["React", "TypeScript", "CSS", "UI/UX"],
-      capacity: 10,
-      currentLoad: 8,
-      velocity: 8.5,
-      efficiency: 85,
-      availability: "Available",
-      timezone: "PST",
-      joinDate: "2024-01-15",
-      tasksCompleted: 45,
-      averageTaskTime: "2.3 days",
-      lastActive: "2 hours ago"
-    },
-    {
-      id: 2,
-      name: "Mike Johnson",
-      role: "Backend Developer",
-      email: "mike@example.com",
-      avatar: "MJ",
-      skills: ["Node.js", "Python", "Database", "API"],
-      capacity: 10,
-      currentLoad: 9,
-      velocity: 9.2,
-      efficiency: 92,
-      availability: "Busy",
-      timezone: "EST",
-      joinDate: "2023-11-20",
-      tasksCompleted: 52,
-      averageTaskTime: "1.8 days",
-      lastActive: "1 hour ago"
-    },
-    {
-      id: 3,
-      name: "Emma Davis",
-      role: "Full Stack Developer",
-      email: "emma@example.com",
-      avatar: "ED",
-      skills: ["React", "Node.js", "Database", "DevOps"],
-      capacity: 10,
-      currentLoad: 7,
-      velocity: 7.8,
-      efficiency: 78,
-      availability: "Available",
-      timezone: "GMT",
-      joinDate: "2024-03-10",
-      tasksCompleted: 38,
-      averageTaskTime: "2.7 days",
-      lastActive: "30 minutes ago"
-    },
-    {
-      id: 4,
-      name: "Alex Rodriguez",
-      role: "DevOps Engineer",
-      email: "alex@example.com",
-      avatar: "AR",
-      skills: ["AWS", "Docker", "CI/CD", "Monitoring"],
-      capacity: 10,
-      currentLoad: 5,
-      velocity: 6.5,
-      efficiency: 65,
-      availability: "Available",
-      timezone: "PST",
-      joinDate: "2024-06-01",
-      tasksCompleted: 28,
-      averageTaskTime: "3.2 days",
-      lastActive: "4 hours ago"
+  // Handle Edit
+  const handleEditMember = (e, member) => {
+    e.stopPropagation();
+    setEditingMember(member);
+  };
+
+  // Handle Delete
+  const handleDeleteMember = async (e, memberId) => {
+    e.stopPropagation();
+    setShowDeleteConfirm(memberId);
+  };
+
+  // Confirm Delete
+  const confirmDelete = async (memberId) => {
+    try {
+      const workspaceId = localStorage.getItem("workspaceId");
+      const response = await fetch(LOGIN_ENDPOINTS.team.delete(memberId), {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "Workspace-ID": workspaceId,
+        },
+      });
+
+      if (response.ok) {
+        setTeamMembers(prev => prev.filter(m => m.id !== memberId));
+        setShowDeleteConfirm(null);
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to delete member");
+      }
+    } catch (err) {
+      console.error("Delete error:", err);
+      alert("Failed to delete member");
     }
-  ];
+  };
+
+  // Fetch team members from API
+  useEffect(() => {
+    const fetchTeamMembers = async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const response = await apiRequest(LOGIN_ENDPOINTS.team.getAll, {
+          method: "GET",
+        });
+        
+        // Transform API response to match component format
+        const transformedMembers = Array.isArray(response) 
+          ? response.map((member, index) => {
+              // Get the actual ID from API - try multiple possible field names
+              const memberId = member.id || member.pk || member.member_id || member.team_member_id || member.user_id;
+              
+              return {
+                id: memberId || index + 1, // Use actual ID from API
+                name: member.name || "Unknown",
+                role: member.role || "Team Member",
+                email: member.email || `${member.name?.toLowerCase().replace(/\s+/g, '.')}@example.com`,
+                avatar: member.name ? member.name.split(' ').map(n => n[0]).join('').toUpperCase() : "TM",
+                skills: member.skills || [],
+                capacity: Math.floor((member.capacityHours || 40) / 4), // Convert hours to capacity points
+                currentLoad: Math.floor((member.assignedHours || 0) / 4),
+                velocity: member.velocity || 0,
+                efficiency: member.efficiency || 0,
+                availability: member.availability || (member.assignedHours < member.capacityHours ? "Available" : "Busy"),
+                timezone: member.timezone || "PST",
+                joinDate: member.joinDate || new Date().toISOString().split('T')[0],
+                tasksCompleted: member.tasksCompleted || 0,
+                averageTaskTime: member.averageTaskTime || "0 days",
+                lastActive: member.lastActive || "Just now"
+              };
+            })
+          : [];
+        
+        setTeamMembers(transformedMembers);
+      } catch (err) {
+        console.error('Error fetching team members:', err);
+        setError(err.message || "Failed to fetch team members");
+        // Keep empty array on error
+        setTeamMembers([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTeamMembers();
+  }, []);
+
+  // Show loading or error state
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-sandTan mx-auto mb-4"></div>
+          <p className="text-sandTan">Loading team members...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && teamMembers.length === 0) {
+    return (
+      <div className="max-w-7xl mx-auto">
+        <div className="bg-red-500/20 border border-red-500/50 text-red-400 px-4 py-3 rounded-lg">
+          Error: {error}
+        </div>
+      </div>
+    );
+  }
 
   const teamMetrics = {
-    totalMembers: 4,
-    averageVelocity: 8.0,
-    totalCapacity: 40,
-    utilizedCapacity: 29,
-    averageEfficiency: 80,
-    totalTasksCompleted: 163,
-    averageTaskTime: "2.5 days"
+    totalMembers: teamMembers.length,
+    averageVelocity: teamMembers.length > 0 
+      ? (teamMembers.reduce((sum, m) => sum + (m.velocity || 0), 0) / teamMembers.length).toFixed(1)
+      : 0,
+    totalCapacity: teamMembers.reduce((sum, m) => sum + (m.capacity || 0), 0),
+    utilizedCapacity: teamMembers.reduce((sum, m) => sum + (m.currentLoad || 0), 0),
+    averageEfficiency: teamMembers.length > 0
+      ? Math.round(teamMembers.reduce((sum, m) => sum + (m.efficiency || 0), 0) / teamMembers.length)
+      : 0,
+    totalTasksCompleted: teamMembers.reduce((sum, m) => sum + (m.tasksCompleted || 0), 0),
+    averageTaskTime: teamMembers.length > 0 && teamMembers[0].averageTaskTime 
+      ? teamMembers[0].averageTaskTime 
+      : "2.5 days"
   };
 
   const getAvailabilityColor = (availability) => {
@@ -106,6 +155,11 @@ export default function TeamOverview() {
 
   return (
     <div className="max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-sandTan">Team Management</h1>
+      </div>
+
       {/* View Mode Selector */}
       <div className="flex gap-4 mb-8">
         <button
@@ -186,7 +240,11 @@ export default function TeamOverview() {
           className="grid grid-cols-1 md:grid-cols-2 gap-6"
         >
           {teamMembers.map((member, index) => (
-            <div key={member.id} className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6">
+            <div 
+              key={member.id} 
+              onClick={() => setSelectedMemberId(member.id)}
+              className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6 cursor-pointer hover:shadow-lg transition-all"
+            >
               <div className="flex items-start gap-4 mb-4">
                 <div className="w-16 h-16 bg-sandTan text-nightBlue rounded-full flex items-center justify-center font-bold text-lg">
                   {member.avatar}
@@ -201,6 +259,23 @@ export default function TeamOverview() {
                     </span>
                     <span className="text-textMuted text-xs">{member.timezone}</span>
                   </div>
+                </div>
+                {/* Edit/Delete Buttons */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={(e) => handleEditMember(e, member)}
+                    className="p-2 bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 rounded-lg transition-colors"
+                    title="Edit"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={(e) => handleDeleteMember(e, member.id)}
+                    className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-400 rounded-lg transition-colors"
+                    title="Delete"
+                  >
+                    🗑️
+                  </button>
                 </div>
               </div>
 
@@ -288,7 +363,11 @@ export default function TeamOverview() {
             
             <div className="space-y-6">
               {teamMembers.map((member, index) => (
-                <div key={member.id} className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-6">
+                <div 
+                  key={member.id} 
+                  onClick={() => setSelectedMemberId(member.id)}
+                  className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-6 cursor-pointer hover:shadow-lg transition-all"
+                >
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 bg-sandTan text-nightBlue rounded-full flex items-center justify-center font-bold">
@@ -360,7 +439,11 @@ export default function TeamOverview() {
             
             <div className="space-y-4">
               {teamMembers.map((member, index) => (
-                <div key={member.id} className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-4">
+                <div 
+                  key={member.id} 
+                  onClick={() => setSelectedMemberId(member.id)}
+                  className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-4 cursor-pointer hover:shadow-lg transition-all"
+                >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-sandTan text-nightBlue rounded-full flex items-center justify-center font-bold">
@@ -416,6 +499,153 @@ export default function TeamOverview() {
             </div>
           </div>
         </motion.div>
+      )}
+
+      {/* Team Member Detail Modal */}
+      {selectedMemberId && (
+        <TeamMemberDetailModal
+          memberId={selectedMemberId}
+          onClose={() => setSelectedMemberId(null)}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white border border-gray-200 rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl"
+          >
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Confirm Delete</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete this team member? This action cannot be undone.
+            </p>
+            <div className="flex gap-4 justify-end">
+              <button
+                onClick={() => setShowDeleteConfirm(null)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => confirmDelete(showDeleteConfirm)}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Edit Member Modal */}
+      {editingMember && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white border border-gray-200 rounded-2xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto shadow-xl"
+          >
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Edit Team Member</h3>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const workspaceId = localStorage.getItem("workspaceId");
+                
+                try {
+                  const response = await fetch(LOGIN_ENDPOINTS.team.update(editingMember.id), {
+                    method: "PATCH",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "Workspace-ID": workspaceId,
+                    },
+                    body: JSON.stringify({
+                      name: formData.get("name"),
+                      email: formData.get("email"),
+                      skills: formData.get("skills").split(",").map(s => s.trim()).filter(Boolean),
+                      capacityHours: parseInt(formData.get("capacityHours")) || 40,
+                    }),
+                  });
+
+                  if (response.ok) {
+                    const updated = await response.json();
+                    setTeamMembers(prev => prev.map(m => 
+                      m.id === editingMember.id 
+                        ? { ...m, name: updated.name || formData.get("name"), email: updated.email || formData.get("email"), skills: updated.skills || formData.get("skills").split(",").map(s => s.trim()) }
+                        : m
+                    ));
+                    setEditingMember(null);
+                  } else {
+                    const data = await response.json();
+                    alert(data.error || "Failed to update member");
+                  }
+                } catch (err) {
+                  console.error("Update error:", err);
+                  alert("Failed to update member");
+                }
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  type="text"
+                  name="name"
+                  defaultValue={editingMember.name}
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-primary focus:border-primary"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  name="email"
+                  defaultValue={editingMember.email}
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-primary focus:border-primary"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Skills (comma-separated)</label>
+                <input
+                  type="text"
+                  name="skills"
+                  defaultValue={editingMember.skills?.join(", ") || ""}
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-primary focus:border-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Capacity (hours/week)</label>
+                <input
+                  type="number"
+                  name="capacityHours"
+                  defaultValue={editingMember.capacity * 4}
+                  min="1"
+                  max="60"
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-primary focus:border-primary"
+                />
+              </div>
+              <div className="flex gap-4 justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditingMember(null)}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primaryDark transition-colors font-semibold"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
       )}
     </div>
   );

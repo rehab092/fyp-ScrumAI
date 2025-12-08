@@ -35,16 +35,10 @@ export default function Navbar() {
 
         <div className="flex gap-2 md:gap-3">
           <button 
-            onClick={() => navigate('/login')}
+            onClick={() => navigate('/workspace/login')}
             className="border border-white/30 text-white px-3 md:px-4 py-2 rounded-lg hover:bg-white/10 hover:text-white transition-all text-sm md:text-base font-medium"
           >
             Login
-          </button>
-          <button 
-            onClick={() => navigate('/signup')}
-            className="bg-secondary text-white font-semibold px-3 md:px-4 py-2 rounded-lg hover:bg-secondaryDark transition-all text-sm md:text-base shadow-lg"
-          >
-            Sign Up
           </button>
         </div>
       </div>

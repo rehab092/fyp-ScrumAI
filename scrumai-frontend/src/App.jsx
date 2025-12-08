@@ -4,12 +4,15 @@ import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login";
-import Signup from "./pages/Signup";
 import FAQ from "./pages/FAQ";
 import Pricing from "./pages/Pricing";
 import Portal from "./pages/Portal";
 import ScrumMasterPortal from "./pages/ScrumMasterPortal";
 import ProductOwnerPortal from "./pages/ProductOwnerPortal";
+import TeamMemberPortal from "./pages/TeamMemberPortal";
+import AdminPortal from "./pages/AdminPortal";
+import WorkspaceRegister from "./pages/WorkspaceRegister";
+import WorkspaceLogin from "./pages/WorkspaceLogin";
 
 export default function App() {
   return (
@@ -18,7 +21,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
+          <Route path="/workspace/register" element={<WorkspaceRegister />} />
+          <Route path="/workspace/login" element={<WorkspaceLogin />} />
           <Route path="/faq" element={<FAQ />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route
@@ -38,10 +42,26 @@ export default function App() {
             }
           />
           <Route
+            path="/team-member"
+            element={
+              <ProtectedRoute requiredRole="teamMember">
+                <TeamMemberPortal />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/product-owner"
             element={
               <ProtectedRoute requiredRole="productOwner">
                 <ProductOwnerPortal />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <AdminPortal />
               </ProtectedRoute>
             }
           />

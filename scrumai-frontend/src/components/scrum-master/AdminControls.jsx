@@ -1,47 +1,122 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import TeamMemberForm from "./TeamMemberForm";
+import { LOGIN_ENDPOINTS, apiRequest } from "../../config/api";
 
 export default function AdminControls() {
   const [activeTab, setActiveTab] = useState("users"); // 'users', 'permissions', 'integrations', 'system'
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingMember, setEditingMember] = useState(null);
+  const [deletingMemberId, setDeletingMemberId] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const users = [
-    {
-      id: 1,
-      name: "Sarah Chen",
-      email: "sarah@example.com",
-      role: "Scrum Master",
-      status: "Active",
-      lastLogin: "2 hours ago",
-      permissions: ["Full Access", "Team Management", "Sprint Planning"]
-    },
-    {
-      id: 2,
-      name: "Mike Johnson",
-      email: "mike@example.com",
-      role: "Developer",
-      status: "Active",
-      lastLogin: "1 hour ago",
-      permissions: ["Task Management", "Sprint View"]
-    },
-    {
-      id: 3,
-      name: "Emma Davis",
-      email: "emma@example.com",
-      role: "Product Owner",
-      status: "Active",
-      lastLogin: "30 minutes ago",
-      permissions: ["Backlog Management", "Sprint Planning", "Reports"]
-    },
-    {
-      id: 4,
-      name: "Alex Rodriguez",
-      email: "alex@example.com",
-      role: "Developer",
-      status: "Inactive",
-      lastLogin: "3 days ago",
-      permissions: ["Task Management", "Sprint View"]
+  // Fetch team members from API
+  useEffect(() => {
+    const fetchTeamMembers = async () => {
+      try {
+        setLoading(true);
+        const response = await apiRequest(LOGIN_ENDPOINTS.team.getAll, {
+          method: "GET",
+        });
+        
+        // Handle API response structure: { success: true, data: [...] } or direct array
+        const membersArray = Array.isArray(response) ? response : (response.data || []);
+        
+        // Transform API response to match component format
+        const transformedUsers = Array.isArray(membersArray) 
+          ? membersArray.map((member, index) => {
+              // Get the actual ID from API - try multiple possible field names
+              const memberId = member.id || member.pk || member.member_id || member.team_member_id || member.user_id;
+              
+              return {
+                id: memberId || index + 1, // Use actual ID from API
+                name: member.name || "Unknown",
+                email: member.email || `${member.name?.toLowerCase().replace(/\s+/g, '.')}@example.com`,
+                role: member.role || "Team Member",
+                status: member.status === 'active' || member.status === 'available' ? "Active" : "Inactive",
+                lastLogin: member.lastLogin || "Never",
+                permissions: member.permissions || ["Task Management", "Sprint View"],
+                skills: member.skills || [],
+                capacityHours: member.capacityHours || 40,
+                assignedHours: member.assignedHours || 0
+              };
+            })
+          : [];
+        
+        setUsers(transformedUsers);
+      } catch (err) {
+        console.error('Error fetching team members:', err);
+        setUsers([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTeamMembers();
+  }, []);
+
+  // Refresh team members list
+  const refreshTeamMembers = async () => {
+    try {
+      const response = await apiRequest(LOGIN_ENDPOINTS.team.getAll, {
+        method: "GET",
+      });
+      
+      // Handle API response structure: { success: true, data: [...] } or direct array
+      const membersArray = Array.isArray(response) ? response : (response.data || []);
+      
+      const transformedUsers = Array.isArray(membersArray) 
+        ? membersArray.map((member, index) => {
+            // Get the actual ID from API - try multiple possible field names
+            const memberId = member.id || member.pk || member.member_id || member.team_member_id || member.user_id;
+            
+            return {
+              id: memberId || index + 1, // Use actual ID from API
+              name: member.name || "Unknown",
+              email: member.email || `${member.name?.toLowerCase().replace(/\s+/g, '.')}@example.com`,
+              role: member.role || "Team Member",
+              status: member.status === 'active' || member.status === 'available' ? "Active" : "Inactive",
+              lastLogin: member.lastLogin || "Never",
+              permissions: member.permissions || ["Task Management", "Sprint View"],
+              skills: member.skills || [],
+              capacityHours: member.capacityHours || 40,
+              assignedHours: member.assignedHours || 0
+            };
+          })
+        : [];
+      
+      setUsers(transformedUsers);
+    } catch (err) {
+      console.error('Error fetching team members:', err);
     }
-  ];
+  };
+
+  // Handle delete team member
+  const handleDelete = async (memberId) => {
+    if (!window.confirm('Are you sure you want to delete this team member? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await apiRequest(LOGIN_ENDPOINTS.team.delete(memberId), {
+        method: "DELETE",
+      });
+      
+      console.log('Delete response:', response);
+      // Refresh the list after deletion
+      await refreshTeamMembers();
+      setDeletingMemberId(null);
+    } catch (err) {
+      console.error('Error deleting team member:', err);
+      alert('Failed to delete team member: ' + (err.message || 'Unknown error'));
+    }
+  };
+
+  // Handle edit team member
+  const handleEdit = (user) => {
+    setEditingMember(user);
+  };
 
   const integrations = [
     {
@@ -145,13 +220,27 @@ export default function AdminControls() {
           <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-sandTan">User Management</h2>
-              <button className="bg-sandTan text-nightBlue px-4 py-2 rounded-lg hover:bg-sandTanShadow transition-all font-medium">
-                + Add User
+              <button 
+                onClick={() => setShowAddForm(true)}
+                className="bg-sandTan text-nightBlue px-4 py-2 rounded-lg hover:bg-sandTanShadow transition-all font-medium flex items-center gap-2"
+              >
+                <span>+</span>
+                <span>Add Team Member</span>
               </button>
             </div>
             
             <div className="space-y-4">
-              {users.map((user, index) => (
+              {loading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sandTan mx-auto mb-2"></div>
+                  <p className="text-textMuted">Loading team members...</p>
+                </div>
+              ) : users.length === 0 ? (
+                <div className="text-center py-8 text-textMuted">
+                  No team members found. Add your first team member!
+                </div>
+              ) : (
+                users.map((user, index) => (
                 <div key={user.id} className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
@@ -172,17 +261,24 @@ export default function AdminControls() {
                         </span>
                       </div>
                       <div className="flex gap-2">
-                        <button className="text-sandTan hover:text-sandTanShadow transition-colors text-sm">
+                        <button 
+                          onClick={() => handleEdit(user)}
+                          className="text-sandTan hover:text-sandTanShadow transition-colors text-sm font-medium px-3 py-1 rounded hover:bg-sandTan/10"
+                        >
                           Edit
                         </button>
-                        <button className="text-red-400 hover:text-red-300 transition-colors text-sm">
-                          Remove
+                        <button 
+                          onClick={() => handleDelete(user.id)}
+                          className="text-red-400 hover:text-red-300 transition-colors text-sm font-medium px-3 py-1 rounded hover:bg-red-500/10"
+                        >
+                          Delete
                         </button>
                       </div>
                     </div>
                   </div>
                 </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </motion.div>
@@ -402,6 +498,33 @@ export default function AdminControls() {
             </div>
           </div>
         </motion.div>
+      )}
+
+      {/* Add Team Member Form Modal */}
+      {showAddForm && (
+        <TeamMemberForm
+          onClose={() => setShowAddForm(false)}
+          onSuccess={(newMember) => {
+            // Close the form after successful addition
+            setShowAddForm(false);
+            // Refresh the team members list
+            refreshTeamMembers();
+          }}
+        />
+      )}
+
+      {/* Edit Team Member Form Modal */}
+      {editingMember && (
+        <TeamMemberForm
+          editMember={editingMember}
+          onClose={() => setEditingMember(null)}
+          onSuccess={(updatedMember) => {
+            // Close the form after successful update
+            setEditingMember(null);
+            // Refresh the team members list
+            refreshTeamMembers();
+          }}
+        />
       )}
     </div>
   );

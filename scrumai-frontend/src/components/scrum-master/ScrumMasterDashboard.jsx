@@ -203,13 +203,6 @@ export default function ScrumMasterDashboard() {
             <div className="text-xs text-white/80">Create sprint report</div>
           </div>
         </button>
-        <button className="flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-primary to-secondary text-white rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105">
-          <span className="text-2xl">👥</span>
-          <div className="text-left">
-            <div className="font-semibold">Add Team Member</div>
-            <div className="text-xs text-white/80">Invite to team</div>
-          </div>
-        </button>
       </motion.div>
 
       {/* KPI Metrics */}

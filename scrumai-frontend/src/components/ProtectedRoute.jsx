@@ -22,17 +22,47 @@ const ProtectedRoute = ({ children, requiredRole = null }) => {
     return <Navigate to="/" state={{ from: location }} replace />;
   }
 
-  if (requiredRole && user.role !== requiredRole) {
-    // Redirect to appropriate portal based on user role
-    const redirectPath = user.role === 'scrumMaster' ? '/scrum-master' : 
-                        user.role === 'productOwner' ? '/product-owner' : '/portal';
-    return <Navigate to={redirectPath} replace />;
+  if (requiredRole) {
+    // Normalize both roles for comparison (handle camelCase, UPPER_CASE, etc.)
+    const userRoleNormalized = (user.role || "").toUpperCase().replace(/[\s-]/g, "_");
+    const requiredRoleNormalized = (requiredRole || "").toUpperCase().replace(/[\s-]/g, "_");
+    
+    // Check if user has the required role (handle multiple naming conventions)
+    const roleMatches = 
+      userRoleNormalized === requiredRoleNormalized ||
+      // Scrum Master variations
+      ((requiredRoleNormalized === "SCRUM_MASTER" || requiredRoleNormalized === "SCRUMMASTER") && 
+       (userRoleNormalized === "SCRUMMASTER" || userRoleNormalized === "SCRUM_MASTER")) ||
+      // Product Owner variations
+      ((requiredRoleNormalized === "PRODUCT_OWNER" || requiredRoleNormalized === "PRODUCTOWNER") && 
+       (userRoleNormalized === "PRODUCTOWNER" || userRoleNormalized === "PRODUCT_OWNER")) ||
+      // Developer/Team Member variations
+      ((requiredRoleNormalized === "DEVELOPER" || requiredRoleNormalized === "TEAM_MEMBER" || requiredRoleNormalized === "TEAMMEMBER") && 
+       (userRoleNormalized === "DEVELOPER" || userRoleNormalized === "TEAM_MEMBER" || userRoleNormalized === "TEAMMEMBER")) ||
+      // Admin
+      (requiredRoleNormalized === "ADMIN" && userRoleNormalized === "ADMIN");
+    
+    if (!roleMatches) {
+      // Redirect to appropriate portal based on user role
+      let redirectPath;
+      if (userRoleNormalized === "ADMIN") {
+        redirectPath = "/admin";
+      } else if (userRoleNormalized === "SCRUM_MASTER" || userRoleNormalized === "SCRUMMASTER") {
+        redirectPath = "/scrum-master";
+      } else if (userRoleNormalized === "PRODUCT_OWNER" || userRoleNormalized === "PRODUCTOWNER") {
+        redirectPath = "/product-owner";
+      } else {
+        redirectPath = "/team-member";
+      }
+      return <Navigate to={redirectPath} replace />;
+    }
   }
 
   return children;
 };
 
 export default ProtectedRoute;
+
 
 
 

@@ -52,18 +52,18 @@ export default function Hero() {
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => navigate('/signup')}
+                onClick={() => navigate('/workspace/register')}
                 className="bg-gradient-to-r from-primary to-primaryDark text-white px-8 py-4 rounded-xl font-semibold text-lg hover:shadow-xl transition-all shadow-lg"
               >
-                Start Free Trial
+                Create your workspace
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => navigate('/login')}
+                onClick={() => navigate('/workspace/login')}
                 className="border-2 border-primary text-primary px-8 py-4 rounded-xl font-semibold text-lg hover:bg-primary hover:text-white transition-all"
               >
-                Login
+                Login to your workspace
               </motion.button>
             </div>
 
