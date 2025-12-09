@@ -14,7 +14,7 @@ import openai
 from .jwt_utils import generate_jwt_token
 
 # =========================
-# OpenAI setup
+# OpenAI setup (classic client)
 # =========================
 openai.api_key = os.getenv("OPENAI_API_KEY")
 MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
@@ -24,9 +24,7 @@ OPENAI_TIMEOUT = int(os.getenv("OPENAI_TIMEOUT", "30"))
 # Helpers
 # =========================
 def call_llm(prompt: str, max_tokens: int = 2000, max_retries: int = 2) -> str:
-    """
-    Call OpenAI with JSON-only discipline + small retry.
-    """
+    """Call OpenAI with JSON-only discipline + small retry."""
     system_msg = (
         "You are an Agile decomposition engine. "
         "Return STRICT JSON only. No prose, markdown, or code fences."
@@ -64,7 +62,6 @@ def call_llm(prompt: str, max_tokens: int = 2000, max_retries: int = 2) -> str:
                 continue
             raise RuntimeError(f"Error communicating with OpenAI: {e}") from e
 
-
 import re
 import json
 
@@ -82,10 +79,10 @@ def sanitize_json(raw: str) -> str:
     text = raw.strip()
 
     # Remove code fences if any
-    if text.startswith("```"):
+    if text.startswith(""):
         lines = text.splitlines()
         # drop the first line and any closing fence line
-        if lines and lines[-1].strip().startswith("```"):
+        if lines and lines[-1].strip().startswith(""):
             text = "\n".join(lines[1:-1]).strip()
         else:
             text = "\n".join(lines[1:]).strip()
@@ -98,7 +95,7 @@ def sanitize_json(raw: str) -> str:
 
     # Strip JS-style comments
     text = re.sub(r"//.*?$", "", text, flags=re.MULTILINE)
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    text = re.sub(r"/\.?\*/", "", text, flags=re.DOTALL)
 
     # Keep only from first JSON opener to last closer
     start = None
@@ -316,11 +313,13 @@ For each non-empty line below (ONE user story per line):
 - Each line includes PRIORITY at the end in format: "story text | Priority"
 - Extract the priority EXACTLY as it is.
 - ECHO THE FULL ORIGINAL LINE EXACTLY AS GIVEN.
-- Include `"priority"` for each story using the extracted value.
+- Include "priority" for each story using the extracted value.
 - Produce essential developer tasks only.
 - Subtasks only when needed.
 - Strings <= 120 chars.
 - Number tasks as "1","2","3",...
+
+        - For each task include estimated hours (numeric) and required skills as an array of short skill strings.
 
 Input:
 {joined}
@@ -331,9 +330,9 @@ Output JSON (ONLY):
     {{
       "story": "EXACT original full line",
       "priority": "PriorityExactlyHere",
-      "tasks": [
-        {{"task_number": "1", "task": "short technical description", "subtasks": ["empty"]}}
-      ]
+                        "tasks": [
+                                {{"task_number": "1", "task": "short technical description", "subtasks": ["empty"], "skills": ["skill1"], "estimated_hours": 1.0}}
+                        ]
     }}
   ]
 }}
@@ -354,15 +353,17 @@ Rules:
 - Essential tasks only, subtasks only when needed.
 - Strings <= 120 chars.
 
+- For each task include estimated hours (numeric) and required skills as an array of short skill strings.
+
 Output:
 {{
   "stories": [
     {{
-      "story": "{line}",
-      "priority": "PriorityHere",
-      "tasks": [
-        {{"task_number": "1", "task": "short technical description", "subtasks": ["empty"]}}
-      ]
+            "story": "{line}",
+            "priority": "PriorityHere",
+                        "tasks": [
+                                {{"task_number": "1", "task": "short technical description", "subtasks": ["empty"], "skills": ["skill1"], "estimated_hours": 1.0}}
+                        ]
     }}
   ]
 }}
@@ -425,11 +426,26 @@ Output:
                 numbered = f"{seq}.{idx} {ttxt}" if ttxt else f"{seq}.{idx}"
                 subt_csv = ", ".join(subt) if isinstance(subt, list) and subt else "empty"
 
+                # Extract skills and estimated_hours from LLM output when present
+                skills = task.get("skills", [])
+                if isinstance(skills, list):
+                    skills_csv = ", ".join(map(str, skills)) if skills else ""
+                else:
+                    skills_csv = str(skills) if skills else ""
+
+                est_hours = task.get("estimated_hours")
+                try:
+                    est_hours_val = float(est_hours) if est_hours is not None else None
+                except Exception:
+                    est_hours_val = None
+
                 Backlog.objects.create(
                     project_id=str(project.id),
                     user_story=us_obj,
                     tasks=numbered,
-                    subtasks=subt_csv
+                    subtasks=subt_csv,
+                    skills_required=skills_csv,
+                    estimated_hours=est_hours_val,
                 )
                 tasks_created += 1
 
@@ -455,7 +471,7 @@ def get_tasks_by_user_story(request, user_story_id):
     if request.method == 'GET':
         try:
             story = UserStory.objects.get(id=user_story_id)
-            tasks = list(Backlog.objects.filter(user_story=story).values('user_story_id', 'tasks', 'subtasks'))
+            tasks = list(Backlog.objects.filter(user_story=story).values('user_story_id', 'tasks', 'subtasks', 'skills_required', 'estimated_hours'))
             return JsonResponse({'user_story': story.id, 'tasks': tasks})
         except UserStory.DoesNotExist:
             return JsonResponse({'error': 'User story not found'}, status=404)
@@ -472,6 +488,23 @@ def update_task(request, task_id):
 
             backlog.tasks = data.get('tasks', backlog.tasks)
             backlog.subtasks = data.get('subtasks', backlog.subtasks)
+
+            # Update skills_required (accept list or string)
+            if 'skills_required' in data:
+                skills_in = data.get('skills_required')
+                if isinstance(skills_in, list):
+                    backlog.skills_required = ", ".join(map(str, skills_in))
+                else:
+                    backlog.skills_required = str(skills_in) if skills_in is not None else backlog.skills_required
+
+            # Update estimated_hours if provided and numeric
+            if 'estimated_hours' in data:
+                try:
+                    backlog.estimated_hours = float(data.get('estimated_hours'))
+                except Exception:
+                    # ignore invalid numeric conversion and keep existing value
+                    pass
+
             backlog.save()
 
             return JsonResponse({'message': 'Task updated successfully'})
@@ -552,7 +585,7 @@ def update_user_story(request, user_story_id):
 def get_product_owner_by_email(request):
     """
     GET endpoint to find a ProductOwner by email.
-    Expects a query parameter `email`, e.g. `/userstorymanager/owner_by_email/?email=user@example.com`.
+    Expects a query parameter email, e.g. /userstorymanager/owner_by_email/?email=user@example.com.
     """
     if request.method == "GET":
         email = request.GET.get("email")
@@ -581,7 +614,7 @@ def project_detail(request, owner):
 
     Methods supported:
     - GET: return project details
-    - PUT: update project fields (expects JSON with `name` and/or `description` and/or `owner_id`)
+    - PUT: update project fields (expects JSON with name and/or description and/or owner_id)
     - DELETE: delete the project
     """
     try:

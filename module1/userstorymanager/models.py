@@ -41,11 +41,16 @@ class Backlog(models.Model):
         UserStory,
         on_delete=models.CASCADE,
         related_name='backlog_items',
-        db_column='user_story_id',   
+        db_column='user_story_id',
+        null=True,
+        blank=True,
     )
     task_id = models.AutoField(primary_key=True)
     tasks = models.TextField()
     subtasks = models.TextField()
+    # New fields for Module 2: skills required and estimated hours
+    skills_required = models.TextField(null=True, blank=True, default="")
+    estimated_hours = models.FloatField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.project_id} - {self.task_id}"
