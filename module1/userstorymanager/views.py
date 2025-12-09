@@ -67,25 +67,28 @@ import json
 
 def sanitize_json(raw: str) -> str:
     """
-    Make best-effort to extract valid JSON:
-    - Trim to the first '{' or '[' and the last '}' or ']'
-    - Remove JS-style comments (// and /* */)
-    - Remove trailing commas before } or ]
+    Extract valid JSON in a safe and predictable way:
+    - Remove ``` fences if present
+    - Remove JS comments
     - Normalize smart quotes
+    - Trim to outermost JSON object or array
+    - Fix trailing commas
     """
     if not raw:
         return ""
 
     text = raw.strip()
 
-    # Remove code fences if any
-    if text.startswith(""):
+    # -------- FIXED: detect code fences correctly --------
+    # Handle cases like: ```json ... ``` or ``` ... ```
+    if text.startswith("```"):
         lines = text.splitlines()
-        # drop the first line and any closing fence line
-        if lines and lines[-1].strip().startswith(""):
-            text = "\n".join(lines[1:-1]).strip()
-        else:
-            text = "\n".join(lines[1:]).strip()
+        # remove first fence
+        lines = lines[1:]
+        # remove closing fence if exists
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
 
     # Normalize smart quotes
     text = (
@@ -93,9 +96,11 @@ def sanitize_json(raw: str) -> str:
             .replace("‘", "'").replace("’", "'")
     )
 
-    # Strip JS-style comments
+    # -------- FIXED: comment removal --------
+    # Inline comments //
     text = re.sub(r"//.*?$", "", text, flags=re.MULTILINE)
-    text = re.sub(r"/\.?\*/", "", text, flags=re.DOTALL)
+    # Block comments /* ... */
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
 
     # Keep only from first JSON opener to last closer
     start = None
@@ -103,26 +108,29 @@ def sanitize_json(raw: str) -> str:
         idx = text.find(opener)
         if idx != -1 and (start is None or idx < start):
             start = idx
+
     if start is None:
-        return text
+        return text   # nothing better to return
 
     end = None
     for closer in ("}", "]"):
         idx = text.rfind(closer)
-        if idx != -1 and (end is None or idx < end):
-            # keep the farthest-right closer
-            end = idx if end is None else max(end, idx)
+        if idx != -1:
+            if end is None:
+                end = idx
+            else:
+                end = max(end, idx)
+
     if end is None or end < start:
         candidate = text[start:]
     else:
         candidate = text[start:end + 1]
 
-    # Remove trailing commas before } or ]
+    # Remove trailing commas before ] or }
     candidate = re.sub(r",\s*(\])", r"\1", candidate)
     candidate = re.sub(r",\s*(\})", r"\1", candidate)
 
-    # Sometimes models produce keys with single quotes → make double-quoted JSON
-    # (only if we still can't parse)
+    # Final attempt: convert single quotes to double quotes
     try:
         json.loads(candidate)
         return candidate
@@ -133,7 +141,6 @@ def sanitize_json(raw: str) -> str:
             .replace(", '", ', "').replace("'}", '"}')
             .replace("'", '"')
         )
-        # Remove any new trailing commas after quote-fixing
         fixed = re.sub(r",\s*(\])", r"\1", fixed)
         fixed = re.sub(r",\s*(\})", r"\1", fixed)
         return fixed
@@ -784,3 +791,32 @@ def create_project(request):
             "owner_id": project.owner.id
         }, status=201)
     return JsonResponse({"error": "Invalid request method"}, status=405)
+
+@csrf_exempt
+def get_project_id_by_name(request):
+        """GET endpoint: return project id(s) for a given project name.
+
+        Query parameter: `name` (string)
+        - If one project matches (case-insensitive), returns {"project_id": <id>}.
+        - If multiple projects match, returns {"project_ids": [<id>, ...]}.
+        - If none match, returns 404.
+        """
+        if request.method != "GET":
+            return JsonResponse({"error": "Invalid request method"}, status=405)
+
+        name = request.GET.get("name")
+        if not name:
+            return JsonResponse({"error": "Query parameter 'name' is required"}, status=400)
+
+        matches = list(Project.objects.filter(name__iexact=name).values("id", "name"))
+        if not matches:
+            # Try partial case-insensitive contains as a fallback
+            matches = list(Project.objects.filter(name__icontains=name).values("id", "name"))
+
+        if not matches:
+            return JsonResponse({"error": "Project not found"}, status=404)
+
+        ids = [m["id"] for m in matches]
+        if len(ids) == 1:
+            return JsonResponse({"project_id": ids[0], "name": matches[0].get("name")}, status=200)
+        return JsonResponse({"project_ids": ids, "matches": matches}, status=200)

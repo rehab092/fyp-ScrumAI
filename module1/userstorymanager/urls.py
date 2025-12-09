@@ -27,6 +27,7 @@ path('owner_by_email/', views.get_product_owner_by_email, name='owner_by_email')
     path('project/<int:project_id>/update/', views.update_project, name='update_project'),  # Update project
     path('project/<int:project_id>/delete/', views.delete_project, name='delete_project'),  # Delete project
     path('project/create/', views.create_project, name='create_project'),  # Create a new project
+    path('project/id_by_name/', views.get_project_id_by_name, name='get_project_id_by_name'),
     
 
 ]
