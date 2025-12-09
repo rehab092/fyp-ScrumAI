@@ -54,3 +54,5 @@ class Backlog(models.Model):
 
     def __str__(self):
         return f"{self.project_id} - {self.task_id}"
+
+

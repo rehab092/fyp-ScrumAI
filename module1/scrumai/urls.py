@@ -22,6 +22,8 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('userstories/', include('userstorymanager.urls')),
+    path('api/module2/', include('assignment_module.urls')),
+    path("api/auth/", include("authsystem.urls")),
    
 
     

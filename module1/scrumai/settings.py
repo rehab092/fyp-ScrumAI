@@ -10,6 +10,7 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-secret")
 DEBUG = os.getenv("DJANGO_DEBUG", "True") == "True"
 ALLOWED_HOSTS = ["*"]
 
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -23,6 +24,23 @@ INSTALLED_APPS = [
     # third-party
     # "rest_framework",  # add later when you start APIs
     # local apps
+    # New Module 2 App
+    "assignment_module",
+    'authsystem',
+
+]
+# ADD THIS - Allow custom headers including Workspace-ID
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+    "workspace-id",  # Your custom header
 ]
 
 REST_FRAMEWORK = {
@@ -36,13 +54,13 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", SECRET_KEY)
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",  # MUST BE FIRST
     "django.middleware.security.SecurityMiddleware",
-    "corsheaders.middleware.CorsMiddleware",            # for handling CORS
-    "django.contrib.sessions.middleware.SessionMiddleware",      # required
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",   # required
-    "django.contrib.messages.middleware.MessageMiddleware",      # required
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 CORS_ALLOW_ALL_ORIGINS = True    # for development only, adjust for production
@@ -90,3 +108,9 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT =os.path.join(BASE_DIR, "media")
 
 STATIC_URL = "static/"
+
+
+# EmailJS configuration
+EMAILJS_SERVICE_ID = "service_2o8kq9q"
+EMAILJS_TEMPLATE_ID_INVITE = "template_xyr5xf1"
+EMAILJS_PUBLIC_KEY = "IAOnLNvPaI9uTeFEQ"  # Public key (do NOT use the private key here)
