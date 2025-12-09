@@ -21,3 +21,12 @@ staticfiles/
 .env.*
 secrets.json
 config.yaml
+
+
+# Virtual environments
+venv/
+env/
+venv3*/
+venv31*/
+module1/venv*/
+module1/env*/
