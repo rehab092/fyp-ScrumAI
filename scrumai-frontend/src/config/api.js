@@ -62,6 +62,10 @@ export const LOGIN_ENDPOINTS = {
   projects: {
     getAll: `${API_BASE_URL}projects/`, // Get all projects
     getByOwner: (ownerId) => `${API_BASE_URL}userstories/projects/owner/${ownerId}/`, // Get projects by owner
+<<<<<<< Updated upstream
+=======
+    getIdByName: (name) => `${API_BASE_URL}/userstories/project/id_by_name/?name=${encodeURIComponent(name)}`,
+>>>>>>> Stashed changes
   },
 
   // Tasks Endpoints

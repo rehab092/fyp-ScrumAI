@@ -48,13 +48,19 @@ export default function BacklogManager() {
       // Get owner id from logged-in user and fetch owner-specific projects
       const ownerId = localStorage.getItem('ownerId');
       console.log("Fetching projects for owner ID:", ownerId);
-      if (ownerId && typeof LOGIN_ENDPOINTS !== 'undefined' && LOGIN_ENDPOINTS.projects && LOGIN_ENDPOINTS.projects.getByOwner) {
+      try {
+      if (ownerId ) {
         resp = await apiRequest(LOGIN_ENDPOINTS.projects.getByOwner(ownerId), { method: 'GET' });
-      } else if (typeof LOGIN_ENDPOINTS !== 'undefined' && LOGIN_ENDPOINTS.projects && LOGIN_ENDPOINTS.projects.getAll) {
-        resp = await apiRequest(LOGIN_ENDPOINTS.projects.getAll, { method: 'GET' });
-      } else {
-        resp = await apiRequest('/userstorymanager/projects/', { method: 'GET' });
+      } 
+    }
+       catch (e) {
+        console.warn("Failed to fetch projects by owner, trying all projects", e);
       }
+      // Fallback to fetching all projects if owner-specific fetch fails or is unavailable
+      // if (!resp && typeof LOGIN_ENDPOINTS !== 'undefined' && LOGIN_ENDPOINTS.projects && LOGIN_ENDPOINTS.projects.getAll) {
+      //   resp = await apiRequest(LOGIN_ENDPOINTS.projects.getAll, { method: 'GET' });
+      // }
+      console.log("Fetched projects:", resp);
       if (Array.isArray(resp)) setProjects(resp);
     } catch (err) {
       console.warn('Failed to fetch projects for dropdown', err);
@@ -133,56 +139,85 @@ export default function BacklogManager() {
     }
   };
 
-  const handleAddStory = async () => {
-    if (!newStory.owner_id.trim() || !newStory.project_id.trim() || !newStory.role.trim() || !newStory.goal.trim() || !newStory.benefit.trim()) {
-      setError("Owner ID, Project ID, Role, Goal, and Benefit are required");
-      return;
-    }
+  
+    const handleAddStory = async () => {
+      // Ensure owner_id and project_id are populated from available sources
+      const storedOwnerId = localStorage.getItem('ownerId') || (() => {
+        try {
+          const su = JSON.parse(localStorage.getItem('scrumai_user'));
+          return su && (su.owner_id || su.id || su.ownerId) ? (su.owner_id || su.id || su.ownerId) : null;
+        } catch (e) {
+          return null;
+        }
+      })();
+  
+      const ownerId = newStory.owner_id || storedOwnerId || "";
+  
+      // Project id can come from the add form (newStory.project_id), from the bulk selector (if user selected there), or as a fallback the first project in list
+      const fallbackProjectId = bulkFormData && bulkFormData.project_id ? bulkFormData.project_id : (projects && projects.length ? (projects[0].id || projects[0].pk || projects[0].ID) : "");
+      let projectId = newStory.project_id || fallbackProjectId || localStorage.getItem('selectedProjectId') || "";
+  
+      if (!String(ownerId).trim() || !String(projectId).trim() || !String(newStory.role || "").trim() || !String(newStory.goal || "").trim() || !String(newStory.benefit || "").trim()) {
+        setError("Owner ID, Project ID, Role, Goal, and Benefit are required");
+        return;
+      }
+  
+      setLoading(true);
+      setError("");
+      setSuccessMessage("");
+  
+      try {
+        // Check if projectId is actually a project name (not a number) and fetch the actual ID
+        if (isNaN(projectId) && projectId.trim()) {
+          try {
+            const lookupResponse = await apiRequest(LOGIN_ENDPOINTS.projects.getIdByName(projectId), { method: 'GET' });
+            projectId = lookupResponse.id || lookupResponse.project_id || projectId;
+            console.log("Resolved project name to ID:", projectId);
+          } catch (lookupErr) {
+            console.warn("Failed to look up project ID by name, using provided value:", lookupErr);
+            // Continue with the original projectId value
+          }
+        }
+  
+        // Format story as "As a [role], I want [goal], so that [benefit]"
+        const storyText = `As a ${newStory.role}, I want ${newStory.goal}, so that ${newStory.benefit}`;
+        
+        // Create FormData for backend
+        const formData = new FormData();
+        formData.append('owner_id', ownerId);
+        formData.append('project_id', projectId);
+        formData.append('role', newStory.role);
+        formData.append('goal', newStory.goal);
+        formData.append('benefit', newStory.benefit);
+        formData.append('priority', newStory.priority);
+        formData.append('stories_text', storyText);
+  
+        // Call backend API
+        const response = await apiRequestFormData(LOGIN_ENDPOINTS.userStories.upload, formData);
+        
+        // Refresh stories list from backend
+        await fetchUserStories();
+  
+        setNewStory({ 
+          owner_id: "", 
+          project_id: "", 
+          role: "", 
+          goal: "", 
+          benefit: "", 
+          priority: "Medium", 
+          estimate: "3 points" 
+        });
+        setMode("view");
+        setSuccessMessage(`Success! Created ${response.stories_created} user story and ${response.tasks_created} tasks.`);
+        setTimeout(() => setSuccessMessage(""), 5000);
+      } catch (err) {
+        setError("Failed to add story: " + (err.message || "Please check your connection and try again."));
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    setLoading(true);
-    setError("");
-    setSuccessMessage("");
-
-    try {
-      // Format story as "As a [role], I want [goal], so that [benefit]"
-      const storyText = `As a ${newStory.role}, I want ${newStory.goal}, so that ${newStory.benefit}`;
-      
-      // Create FormData for backend
-      const formData = new FormData();
-      formData.append('owner_id', newStory.owner_id);
-      formData.append('project_id', newStory.project_id);
-      formData.append('role', newStory.role);
-      formData.append('goal', newStory.goal);
-      formData.append('benefit', newStory.benefit);
-      formData.append('priority', newStory.priority);
-      formData.append('stories_text', storyText);
-
-      // Call backend API
-      const response = await apiRequestFormData(LOGIN_ENDPOINTS.userStories.upload, formData);
-      
-      // Refresh stories list from backend
-      await fetchUserStories();
-
-      setNewStory({ 
-        owner_id: "", 
-        project_id: "", 
-        role: "", 
-        goal: "", 
-        benefit: "", 
-        priority: "Medium", 
-        estimate: "3 points" 
-      });
-      setMode("view");
-      setSuccessMessage(`Success! Created ${response.stories_created} user story and ${response.tasks_created} tasks.`);
-      setTimeout(() => setSuccessMessage(""), 5000);
-    } catch (err) {
-      setError("Failed to add story: " + (err.message || "Please check your connection and try again."));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleBulkAdd = async () => {
+ const handleBulkAdd = async () => {
     if (!bulkFormData.project_id.trim()) {
       setError("Please select a project");
       return;
@@ -201,22 +236,21 @@ export default function BacklogManager() {
       // Create FormData - backend expects stories_text as multiline text
       const formData = new FormData();
       // try to include owner_id if available (some setups provide owner via separate endpoint/session)
-      let ownerId = bulkFormData.owner_id;
-      if (!ownerId) {
+      let ownerId = localStorage.getItem('ownerId') || (() => {
         try {
-          if (typeof LOGIN_ENDPOINTS !== 'undefined' && LOGIN_ENDPOINTS.productOwner && LOGIN_ENDPOINTS.productOwner.current) {
-            const o = await apiRequest(LOGIN_ENDPOINTS.productOwner.current, { method: 'GET' });
-            ownerId = o && (o.owner_id || o.id || o.ownerId);
-          }
+          const su = JSON.parse(localStorage.getItem('scrumai_user'));
+          return su && (su.owner_id || su.id || su.ownerId) ? (su.owner_id || su.id || su.ownerId) : null;
         } catch (e) {
-          // ignore - owner may be provided server-side
+          return null;
         }
-      }
+      })();
+
       if (ownerId) formData.append('owner_id', ownerId);
+      formData.append('owner_id', ownerId);
       formData.append('project_id', bulkFormData.project_id);
       // backend requires role/benefit/priority -> send defaults (these are not editable in UI per request)
       formData.append('role', bulkFormData.role);
-      formData.append('goal', ''); // optional for bulk
+      formData.append('goal', 'abc'); // optional for bulk
       formData.append('benefit', bulkFormData.benefit);
       formData.append('priority', bulkFormData.priority);
       formData.append('stories_text', bulkStoriesText); // Send multiline text directly
