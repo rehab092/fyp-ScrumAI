@@ -14,6 +14,7 @@ export default function ScrumMasterPortal() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const workspaceName = localStorage.getItem("workspaceName") || "My Workspace";
 
   const navigationItems = [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
@@ -70,6 +71,7 @@ export default function ScrumMasterPortal() {
                 <h1 className="text-lg md:text-2xl font-bold text-white tracking-wide drop-shadow-sm">
                   ScrumAI
                 </h1>
+                <p className="text-xs text-white/70 hidden md:block">{workspaceName}</p>
               </div>
             </div>
           </div>
@@ -112,8 +114,12 @@ export default function ScrumMasterPortal() {
                   <div className="px-4 py-3 border-b border-border">
                     <p className="text-sm font-semibold text-textPrimary">{user?.name || "Scrum Master"}</p>
                     <p className="text-xs text-textSecondary">{user?.email || "scrum@scrumai.com"}</p>
-                    <div className="mt-2 px-2 py-1 bg-primary/10 rounded-lg">
-                      <span className="text-xs text-primary font-medium">Scrum Master</span>
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="px-2 py-1 bg-primary/10 rounded-lg text-xs text-primary font-medium">Scrum Master</span>
+                    </div>
+                    <div className="mt-2 flex items-center gap-1 text-xs text-textSecondary">
+                      <span>🏢</span>
+                      <span>{workspaceName}</span>
                     </div>
                   </div>
                   

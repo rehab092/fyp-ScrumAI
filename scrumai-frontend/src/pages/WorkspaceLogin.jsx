@@ -90,9 +90,11 @@ export default function WorkspaceLogin() {
           loginTime: new Date().toISOString(),
         };
         localStorage.setItem("scrumai_user", JSON.stringify(adminUser));
+        // Store session timestamp for session validation
+        localStorage.setItem("scrumai_session_timestamp", Date.now().toString());
         
-        // Redirect to admin portal (use window.location for full page reload to update AuthContext)
-        window.location.href = "/admin";
+        // Redirect to admin portal (use window.location.replace to prevent back navigation to login)
+        window.location.replace("/admin");
       } else {
         // User login response (SM/PO/Dev)
         // Backend returns: { success: true, user: { id, name, email, role, type, workspaceId, workspaceName } }
@@ -144,9 +146,11 @@ export default function WorkspaceLogin() {
           loginTime: new Date().toISOString(),
         };
         localStorage.setItem("scrumai_user", JSON.stringify(teamUser));
+        // Store session timestamp for session validation
+        localStorage.setItem("scrumai_session_timestamp", Date.now().toString());
 
-        // Redirect based on role (use window.location for full page reload to update AuthContext)
-        window.location.href = redirectPath;
+        // Redirect based on role (use window.location.replace to prevent back navigation to login)
+        window.location.replace(redirectPath);
       }
     } catch (err) {
       console.error("Login error:", err);
@@ -176,17 +180,15 @@ export default function WorkspaceLogin() {
   return (
     <>
       <Navbar />
-      <div className="min-h-screen bg-gradient-to-br from-background via-surface to-surfaceDark flex items-center justify-center px-4 pt-24 pb-12">
-      <div className="w-full max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center">
-          {/* Left Side - ScrumAI Info Card */}
-          <motion.div
-            initial={{ opacity: 0, x: -50 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.8 }}
-            className="hidden lg:block"
-          >
-            <div className="bg-gradient-to-br from-primaryDark via-primary to-primaryLight rounded-3xl p-8 lg:p-12 shadow-2xl text-white relative overflow-hidden">
+      <div className="min-h-screen bg-gradient-to-br from-background via-surface to-surfaceDark flex">
+        {/* Left Side - Full Height Info Panel */}
+        <motion.div
+          initial={{ opacity: 0, x: -50 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.8 }}
+          className="hidden lg:flex lg:w-1/2 min-h-screen"
+        >
+          <div className="bg-gradient-to-br from-primaryDark via-primary to-primaryLight w-full min-h-screen p-8 lg:p-12 text-white relative overflow-hidden flex flex-col justify-center">
               {/* Background Pattern */}
               <div className="absolute inset-0 opacity-10">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full blur-3xl"></div>
@@ -244,23 +246,24 @@ export default function WorkspaceLogin() {
           </motion.div>
 
           {/* Right Side - Login Form */}
-          <motion.div
-            initial={{ opacity: 0, x: 50 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.8 }}
-            className="w-full"
-          >
-            <div className="bg-white rounded-3xl shadow-2xl border border-border p-8 lg:p-10">
-              {/* Mobile Logo */}
-              <div className="lg:hidden mb-6 text-center">
-                <div className="w-12 h-12 bg-gradient-to-r from-primary to-secondary rounded-xl flex items-center justify-center mx-auto mb-3">
-                  <span className="text-2xl font-bold text-white">S</span>
+          <div className="w-full lg:w-1/2 min-h-screen flex items-center justify-center px-4 py-12 lg:px-12">
+            <motion.div
+              initial={{ opacity: 0, x: 50 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.8 }}
+              className="w-full max-w-md"
+            >
+              <div className="bg-white rounded-3xl shadow-2xl border border-border p-8 lg:p-10">
+                {/* Mobile Logo */}
+                <div className="lg:hidden mb-6 text-center">
+                  <div className="w-12 h-12 bg-gradient-to-r from-primary to-secondary rounded-xl flex items-center justify-center mx-auto mb-3">
+                    <span className="text-2xl font-bold text-white">S</span>
+                  </div>
+                  <h1 className="text-2xl font-bold text-textPrimary">ScrumAI</h1>
                 </div>
-                <h1 className="text-2xl font-bold text-textPrimary">ScrumAI</h1>
-              </div>
 
-              <div className="mb-6">
-                <h2 className="text-3xl font-bold text-textPrimary mb-2">Login to Workspace</h2>
+                <div className="mb-6">
+                  <h2 className="text-3xl font-bold text-textPrimary mb-2">Login to Workspace</h2>
                 <p className="text-textSecondary">
                   Choose your login type and access your dashboard
                 </p>
@@ -422,11 +425,10 @@ export default function WorkspaceLogin() {
                   Create one now
                 </button>
               </div>
-            </div>
-          </motion.div>
+              </div>
+            </motion.div>
+          </div>
         </div>
-      </div>
-    </div>
     </>
   );
 }

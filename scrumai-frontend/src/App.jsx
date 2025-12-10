@@ -2,6 +2,7 @@ import React from "react";
 import { Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
+import PublicRoute from "./components/PublicRoute";
 import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login";
 import FAQ from "./pages/FAQ";
@@ -20,9 +21,31 @@ export default function App() {
       <div className="font-sans bg-background min-h-screen text-textPrimary">
         <Routes>
           <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/workspace/register" element={<WorkspaceRegister />} />
-          <Route path="/workspace/login" element={<WorkspaceLogin />} />
+          {/* Public routes - redirect authenticated users to their dashboards */}
+          <Route
+            path="/login"
+            element={
+              <PublicRoute>
+                <Login />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/workspace/register"
+            element={
+              <PublicRoute>
+                <WorkspaceRegister />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/workspace/login"
+            element={
+              <PublicRoute>
+                <WorkspaceLogin />
+              </PublicRoute>
+            }
+          />
           <Route path="/faq" element={<FAQ />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route

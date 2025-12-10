@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 const AuthContext = createContext();
 
@@ -10,18 +10,109 @@ export const useAuth = () => {
   return context;
 };
 
+// Session validation helper
+const validateSession = () => {
+  const savedUser = localStorage.getItem('scrumai_user');
+  const sessionTimestamp = localStorage.getItem('scrumai_session_timestamp');
+  
+  if (!savedUser) return null;
+  
+  try {
+    const user = JSON.parse(savedUser);
+    
+    // Check if session is still valid (24 hours max)
+    if (sessionTimestamp) {
+      const sessionAge = Date.now() - parseInt(sessionTimestamp, 10);
+      const maxSessionAge = 24 * 60 * 60 * 1000; // 24 hours
+      if (sessionAge > maxSessionAge) {
+        // Session expired
+        return null;
+      }
+    }
+    
+    return user;
+  } catch (e) {
+    return null;
+  }
+};
+
+// Clear all session data
+const clearAllSessionData = () => {
+  // Clear all auth-related localStorage items
+  localStorage.removeItem('scrumai_user');
+  localStorage.removeItem('scrumai_session_timestamp');
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('userRole');
+  localStorage.removeItem('userId');
+  localStorage.removeItem('userName');
+  localStorage.removeItem('userEmail');
+  localStorage.removeItem('workspaceId');
+  localStorage.removeItem('workspaceName');
+  localStorage.removeItem('companyName');
+  localStorage.removeItem('adminName');
+  localStorage.removeItem('adminEmail');
+  
+  // Clear sessionStorage as well
+  sessionStorage.clear();
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sessionValid, setSessionValid] = useState(false);
 
-  useEffect(() => {
-    // Check for existing session on app load
-    const savedUser = localStorage.getItem('scrumai_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
+  // Validate session on mount and window focus
+  const checkSession = useCallback(() => {
+    const validUser = validateSession();
+    if (validUser) {
+      setUser(validUser);
+      setSessionValid(true);
+    } else {
+      // Invalid session - clear everything
+      clearAllSessionData();
+      setUser(null);
+      setSessionValid(false);
     }
     setLoading(false);
   }, []);
+
+  useEffect(() => {
+    // Initial session check
+    checkSession();
+
+    // Re-validate session when window regains focus (user returns to tab)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkSession();
+      }
+    };
+
+    // Re-validate on storage changes (logout from another tab)
+    const handleStorageChange = (e) => {
+      if (e.key === 'scrumai_user' || e.key === 'scrumai_session_timestamp') {
+        checkSession();
+      }
+    };
+
+    // Prevent back button access after logout by handling popstate
+    const handlePopState = () => {
+      const validUser = validateSession();
+      if (!validUser) {
+        // Force redirect to login if no valid session
+        window.location.replace('/workspace/login');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [checkSession]);
 
   const login = async (email, password, role, backendUser = null) => {
     setLoading(true);
@@ -45,7 +136,11 @@ export const AuthProvider = ({ children }) => {
     };
 
     setUser(userData);
+    setSessionValid(true);
+    
+    // Store session data
     localStorage.setItem('scrumai_user', JSON.stringify(userData));
+    localStorage.setItem('scrumai_session_timestamp', Date.now().toString());
     
     setLoading(false);
     return userData;
@@ -69,22 +164,37 @@ export const AuthProvider = ({ children }) => {
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     setUser(mockUser);
+    setSessionValid(true);
     localStorage.setItem('scrumai_user', JSON.stringify(mockUser));
+    localStorage.setItem('scrumai_session_timestamp', Date.now().toString());
     setLoading(false);
     
     return mockUser;
   };
 
-  const logout = () => {
+  const logout = useCallback(() => {
+    // Clear user state
     setUser(null);
-    localStorage.removeItem('scrumai_user');
-  };
+    setSessionValid(false);
+    
+    // Clear all session data
+    clearAllSessionData();
+    
+    // Replace current history entry to prevent back navigation
+    // This pushes a new state and then replaces, effectively clearing forward history
+    window.history.pushState(null, '', '/workspace/login');
+    
+    // Force page reload to clear any cached state
+    window.location.replace('/workspace/login');
+  }, []);
 
   const getRedirectPath = (role) => {
     // Normalize role to uppercase for comparison
     const normalizedRole = (role || '').toUpperCase().replace(/[\s-]/g, '_');
     
     switch (normalizedRole) {
+      case 'ADMIN':
+        return '/admin';
       case 'SCRUM_MASTER':
       case 'SCRUMMASTER':
         return '/scrum-master';
@@ -107,7 +217,8 @@ export const AuthProvider = ({ children }) => {
     signup,
     logout,
     getRedirectPath,
-    isAuthenticated: !!user
+    isAuthenticated: !!user && sessionValid,
+    sessionValid
   };
 
   return (
@@ -116,8 +227,6 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
-
-
 
 
 
