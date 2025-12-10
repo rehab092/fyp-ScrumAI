@@ -2,7 +2,11 @@
 
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
-
+from django.conf import settings
+import secrets
+import requests
+from django.contrib.auth.hashers import make_password
+from assignment_module.models import AdminWorkspace
 from .models import ProductOwner, UserStory, Backlog, Project
 
 import json
@@ -165,15 +169,25 @@ def product_owner_list(request):
 def product_owner_create(request):
     if request.method == "POST":
         data = json.loads(request.body)
+        plain_password = generate_password(10)
+        hashed_password = make_password(plain_password)
         owner = ProductOwner.objects.create(
             name=data["name"],
             email=data["email"],
-            password=data["password"],
+            password=hashed_password,
             company_name=data["company_name"],
             workspace_id=data.get("workspace_id"),
         )
-        return JsonResponse({"id": owner.id, "workspace_id": owner.workspace_id, "message": "Owner created successfully"})
-    return JsonResponse({"error": "Invalid request method"}, status=405)
+        workspace = AdminWorkspace.objects.get(id=owner.workspace_id)
+    # Send EmailJS invitation
+    email_sent = send_invitation_email(
+        to_email=data["email"],
+        name=data["name"],
+        role="Product Owner",
+        workspace_name=workspace.workspaceName,
+        password=plain_password,
+    )
+    return JsonResponse({"id": owner.id, "workspace_id": owner.workspace_id, "message": "Owner created successfully"})
 
 @csrf_exempt
 def product_owner_update(request, pk):
@@ -822,3 +836,69 @@ def get_project_id_by_name(request):
         if len(ids) == 1:
             return JsonResponse({"project_id": ids[0], "name": matches[0].get("name")}, status=200)
         return JsonResponse({"project_ids": ids, "matches": matches}, status=200)
+@csrf_exempt
+def get_userstories_by_owner(request, owner_id):
+    """
+    GET endpoint to retrieve all UserStory records for a specific owner.
+    URL: /userstorymanager/userstories/owner/<owner_id>/
+    """
+    if request.method == "GET":
+        try:
+            owner = ProductOwner.objects.get(pk=owner_id)
+        except ProductOwner.DoesNotExist:
+            return JsonResponse({"error": "Owner not found"}, status=404)
+
+        stories = list(UserStory.objects.filter(owner=owner).values(
+            "id", "role", "goal", "benefit", "priority", "project_id", "project_name"
+        ))
+        return JsonResponse(stories, safe=False, status=200)
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+@csrf_exempt
+def generate_password(length=10):
+    """
+    Generate a random password with letters + digits.
+    This is what we will email to Scrum Master / PO / Team Member.
+    """
+    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+#EMAIL INVITATION
+def send_invitation_email(to_email, name, role, workspace_name, password):
+    payload = {
+        "service_id": settings.EMAILJS_SERVICE_ID,
+        "template_id": settings.EMAILJS_TEMPLATE_ID_INVITE,
+        "user_id": settings.EMAILJS_PUBLIC_KEY,
+        "template_params": {
+            "to_email": to_email,
+            "to_name": name,
+            "role": role,
+            "workspace_name": workspace_name,
+            "login_email": to_email,
+            "password": password,
+        },
+    }
+
+    try:
+        r = requests.post(
+            "https://api.emailjs.com/api/v1.0/email/send",
+            json=payload,
+            timeout=10,
+        )
+        r.raise_for_status()
+        return True
+    except requests.RequestException as e:
+        print("EmailJS error:", e)
+        return False
+@csrf_exempt
+def get_userstories_by_project(request, project_id):
+    """Return all UserStory records for a given project_id."""
+    if request.method == 'GET':
+        try:
+            stories = list(UserStory.objects.filter(project_id=project_id).values(
+                'id', 'owner_id', 'role', 'goal', 'benefit', 'priority', 'project_name', 'project_id'
+            ))
+            return JsonResponse(stories, safe=False, status=200)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse({'error': 'Invalid request method'}, status=405)

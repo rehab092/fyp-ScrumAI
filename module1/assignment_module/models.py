@@ -76,7 +76,7 @@ class ManagementUser(models.Model):
     email = models.EmailField(unique=True)
     password = models.CharField(max_length=255)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
-    skills = models.JSONField(default=list, blank=True)
+    
     createdAt = models.DateTimeField(auto_now_add=True)
     updatedAt = models.DateTimeField(auto_now=True)
 

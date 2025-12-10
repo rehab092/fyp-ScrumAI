@@ -8,9 +8,9 @@ from .models import AdminWorkspace
 import secrets
 from .models import AdminWorkspace, TeamMember, ManagementUser, InvitationToken
 from userstorymanager.models import ProductOwner
-
 import requests
 from django.conf import settings
+
 
 
 
@@ -78,7 +78,7 @@ def add_team_member(request):
         is_used=False,
     )
 
-    # 👇 CALL EMAILJS *BEFORE* RETURN
+    # 👇 CALL EMAILJS BEFORE RETURN
     email_sent = send_invitation_email(
         to_email=member.email,
         name=member.name,
@@ -410,19 +410,15 @@ def login_user(request):
     # ------------------------------------------------------
     try:
         user = ManagementUser.objects.get(email__iexact=email)
-        user2=ProductOwner.objects.get(email__iexact=email)
 
         if check_password(password, user.password):
             workspace = user.workspace
-           
 
-
-            # Determine portal route
             redirect_map = {
                 "SCRUM_MASTER": "/scrum-master/dashboard",
                 "PRODUCT_OWNER": "/product-owner/dashboard",
             }
-           
+
             return JsonResponse(
                 {
                     "success": True,
@@ -431,7 +427,7 @@ def login_user(request):
                         "id": user.id,
                         "name": user.name,
                         "email": user.email,
-                        "role": user.role,              # SCRUM_MASTER / PRODUCT_OWNER
+                        "role": user.role,        # SCRUM_MASTER / PRODUCT_OWNER
                         "userType": "MANAGEMENT",
                         "workspaceId": workspace.id if workspace else None,
                         "workspaceName": workspace.workspaceName if workspace else None,
@@ -440,7 +436,6 @@ def login_user(request):
                 },
                 status=200,
             )
-
 
     except ManagementUser.DoesNotExist:
         pass
@@ -476,13 +471,12 @@ def login_user(request):
         pass
 
     # ------------------------------------------------------
-    # 3️⃣ TRY PRODUCT OWNER (from userstorymanager app)
+    # 3️⃣ TRY PRODUCT OWNER (from userstorymanager app - old system)
     # ------------------------------------------------------
     try:
-        owner = ProductOwner.objects.get(email__iexact=email)
+        owner = ManagementUser.objects.get(email__iexact=email)
 
-        # ProductOwner stores plaintext password in DB
-        if owner.password == password:
+        if check_password(password, owner.password):
             return JsonResponse(
                 {
                     "success": True,
@@ -493,7 +487,32 @@ def login_user(request):
                         "email": owner.email,
                         "role": "PRODUCT_OWNER",
                         "userType": "PRODUCT_OWNER",
-                        "company": owner.company_name,
+                        "company": getattr(owner, "company_name", ""),
+                        "redirectTo": "/product-owner/dashboard",
+                    },
+                },
+                status=200,
+            )
+
+    except ManagementUser.DoesNotExist:
+        pass
+
+    try:
+        owner2 = ProductOwner.objects.get(email__iexact=email)
+
+        if check_password(password, owner2.password):
+            return JsonResponse(
+                {
+                    "success": True,
+                    "message": "Login successful.",
+                   
+                    "user": {
+                         "owner_id": owner2.id,
+                        "name": getattr(owner2, "name", owner2.email),
+                        "email": owner2.email,
+                        "role": "PRODUCT_OWNER",
+                        "userType": "PRODUCT_OWNER",
+                        "company": getattr(owner2, "company_name", ""),
                         "redirectTo": "/product-owner/dashboard",
                     },
                 },
@@ -511,7 +530,6 @@ def login_user(request):
         status=401,
     )
 
-
 #GENERATE PASSWORD FOR USER
 @csrf_exempt
 def generate_password(length=10):
@@ -523,7 +541,7 @@ def generate_password(length=10):
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
-#ADD USER BASED ON ROLES LIKE SCRUM MASTER /PRODUCT OWNER
+# ADD USER BASED ON ROLES LIKE SCRUM MASTER / PRODUCT OWNER
 @csrf_exempt
 def add_management_user(request):
     """
@@ -539,6 +557,7 @@ def add_management_user(request):
     except json.JSONDecodeError:
         return JsonResponse({"success": False, "error": "Invalid JSON body."}, status=400)
 
+    # Workspace validation
     workspace_id = request.headers.get("Workspace-ID") or request.META.get("HTTP_WORKSPACE_ID")
     if not workspace_id:
         return JsonResponse({"success": False, "error": "Workspace-ID header is required."}, status=400)
@@ -548,11 +567,12 @@ def add_management_user(request):
     except AdminWorkspace.DoesNotExist:
         return JsonResponse({"success": False, "error": "Workspace not found."}, status=404)
 
+    # Extract fields
     name = (data.get("name") or "").strip()
     email = (data.get("email") or "").strip().lower()
     role = (data.get("role") or "").strip()  # SCRUM_MASTER / PRODUCT_OWNER
-    skills = data.get("skills") or []
 
+    # Validation for missing fields
     missing = []
     if not name: missing.append("name")
     if not email: missing.append("email")
@@ -564,30 +584,34 @@ def add_management_user(request):
             status=400,
         )
 
+    # Role validation
     if role not in ["SCRUM_MASTER", "PRODUCT_OWNER"]:
         return JsonResponse(
             {"success": False, "error": "Invalid role. Use SCRUM_MASTER or PRODUCT_OWNER."},
             status=400,
         )
 
+    # Check duplicate emails across management users
     if ManagementUser.objects.filter(email__iexact=email).exists():
         return JsonResponse(
             {"success": False, "error": "A management user with this email already exists."},
             status=400,
         )
 
+    # Password generation
     plain_password = generate_password(10)
     hashed_password = make_password(plain_password)
 
+    # Create Management User (skills removed)
     user = ManagementUser.objects.create(
         workspace=workspace,
         name=name,
         email=email,
         password=hashed_password,
         role=role,
-        skills=skills,
     )
 
+    # Create invitation token
     token = uuid.uuid4().hex
     invite = InvitationToken.objects.create(
         workspace=workspace,
@@ -597,15 +621,16 @@ def add_management_user(request):
         is_used=False,
     )
 
-    # 👇 CALL EMAILJS *BEFORE* RETURN
+    # Send EmailJS invitation
     email_sent = send_invitation_email(
         to_email=user.email,
         name=user.name,
-        role=user.role,  # SCRUM_MASTER or PRODUCT_OWNER
+        role=user.role,
         workspace_name=workspace.workspaceName,
         password=plain_password,
     )
 
+    # Response
     return JsonResponse(
         {
             "success": True,
@@ -615,7 +640,6 @@ def add_management_user(request):
                 "name": user.name,
                 "email": user.email,
                 "role": user.role,
-                "skills": user.skills,
                 "workspaceId": workspace.id,
             },
             "credentials": {
@@ -669,7 +693,7 @@ def get_scrum_masters(request):
     if request.method != "GET":
         return JsonResponse({"error": "GET method required"}, status=400)
 
-    # Get workspace ID from frontend header
+    # Get workspace ID from header
     workspace_id = request.headers.get("Workspace-ID") or request.META.get("HTTP_WORKSPACE_ID")
     if not workspace_id:
         return JsonResponse({"error": "Workspace-ID header is required."}, status=400)
@@ -679,7 +703,7 @@ def get_scrum_masters(request):
     except AdminWorkspace.DoesNotExist:
         return JsonResponse({"error": "Workspace not found."}, status=404)
 
-    # Filter only SCRUM_MASTER users for this workspace
+    # Filter SCRUM_MASTER for this workspace
     scrum_masters = ManagementUser.objects.filter(workspace=workspace, role="SCRUM_MASTER")
 
     data = [
@@ -688,12 +712,12 @@ def get_scrum_masters(request):
             "name": sm.name,
             "email": sm.email,
             "role": sm.role,
-            "skills": sm.skills,
         }
         for sm in scrum_masters
     ]
 
     return JsonResponse({"success": True, "scrumMasters": data}, status=200)
+
 @csrf_exempt
 def get_product_owners(request):
     if request.method != "GET":
@@ -708,7 +732,7 @@ def get_product_owners(request):
     except AdminWorkspace.DoesNotExist:
         return JsonResponse({"error": "Workspace not found."}, status=404)
 
-    # Filter only PRODUCT_OWNER for this workspace
+    # Filter PRODUCT_OWNER for this workspace
     product_owners = ManagementUser.objects.filter(workspace=workspace, role="PRODUCT_OWNER")
 
     data = [
@@ -717,9 +741,10 @@ def get_product_owners(request):
             "name": po.name,
             "email": po.email,
             "role": po.role,
-            "skills": po.skills,
         }
         for po in product_owners
     ]
 
     return JsonResponse({"success": True, "productOwners": data}, status=200)
+
+   

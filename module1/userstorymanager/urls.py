@@ -28,6 +28,7 @@ path('owner_by_email/', views.get_product_owner_by_email, name='owner_by_email')
     path('project/<int:project_id>/delete/', views.delete_project, name='delete_project'),  # Delete project
     path('project/create/', views.create_project, name='create_project'),  # Create a new project
     path('project/id_by_name/', views.get_project_id_by_name, name='get_project_id_by_name'),
-    
+    path('userstories/owner/<int:owner_id>/', views.get_userstories_by_owner, name='get_userstories_by_owner'),
+    path('us/projects/<int:project_id>/stories/', views.get_userstories_by_project, name='get_userstories_by_project'),  # Get user stories by project ID
 
 ]
