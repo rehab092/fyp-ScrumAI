@@ -82,5 +82,62 @@ class ManagementUser(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.get_role_display()})"
+    
 
 
+# ---------------------------------------------
+# TASK ASSIGNMENT MODEL
+# ---------------------------------------------
+
+from userstorymanager.models import Backlog  # ensure this matches your actual task model name
+
+class TaskAssignment(models.Model):
+
+    STATUS_CHOICES = [
+        ("SUGGESTED", "Suggested"),
+        ("ACCEPTED", "Accepted"),
+        ("REJECTED", "Rejected"),
+    ]
+
+    workspace = models.ForeignKey(AdminWorkspace, on_delete=models.CASCADE)
+    task = models.ForeignKey(Backlog, on_delete=models.CASCADE)
+    member = models.ForeignKey(TeamMember, on_delete=models.CASCADE)
+
+    sprint_id = models.IntegerField(null=True, blank=True)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="SUGGESTED")
+
+    # timestamps
+    suggested_at = models.DateTimeField(default=timezone.now)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # metadata
+    match_score = models.FloatField(null=True, blank=True)
+    reason = models.TextField(null=True, blank=True)  # rejection reason
+    source = models.CharField(max_length=20, default="MANUAL")  # MANUAL / AUTO
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "task", "sprint_id"],
+                name="unique_task_per_sprint"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.task.tasks} → {self.member.name} ({self.status})"
+
+
+class Notification(models.Model):
+    workspace = models.ForeignKey(AdminWorkspace, on_delete=models.CASCADE)
+    user_email = models.EmailField()  # we notify by email instead of linking 3 separate tables
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+    type = models.CharField(max_length=50)  # INFO, WARNING, SUCCESS, ALERT
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user_email} - {self.title}"

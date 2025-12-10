@@ -2,7 +2,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
 import uuid
-from .models import TeamMember, InvitationToken
+from .models import TeamMember, InvitationToken,TaskAssignment
 from django.contrib.auth.hashers import make_password, check_password
 from .models import AdminWorkspace
 import secrets
@@ -10,7 +10,8 @@ from .models import AdminWorkspace, TeamMember, ManagementUser, InvitationToken
 from userstorymanager.models import ProductOwner
 import requests
 from django.conf import settings
-
+import pulp  # for ILP optimization (task assignment)
+from django.utils import timezone
 
 
 
@@ -747,4 +748,555 @@ def get_product_owners(request):
 
     return JsonResponse({"success": True, "productOwners": data}, status=200)
 
-   
+    ####   assignment helper
+
+# ==========================================================
+# UTIL: Read workspace from header
+# ==========================================================
+def get_workspace_from_request(request):
+    workspace_id = request.headers.get("Workspace-ID") or request.META.get("HTTP_WORKSPACE_ID")
+
+    if not workspace_id:
+        return None, JsonResponse({"error": "Workspace-ID header is required."}, status=400)
+
+    try:
+        workspace = AdminWorkspace.objects.get(id=workspace_id)
+    except AdminWorkspace.DoesNotExist:
+        return None, JsonResponse({"error": "Workspace not found."}, status=404)
+
+    return workspace, None
+
+
+# ==========================================================
+# 1) SCRUM MASTER — GET UNASSIGNED TASKS
+# ==========================================================
+@csrf_exempt
+def get_unassigned_tasks(request, sprint_id):
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+
+    workspace, error = get_workspace_from_request(request)
+    if error:
+        return error
+
+    # Find tasks NOT assigned for this sprint
+    assigned_ids = TaskAssignment.objects.filter(
+        workspace=workspace,
+        sprint_id=sprint_id
+    ).values_list("task__task_id", flat=True)
+
+    sprint_items = SprintItem.objects.filter(sprint_id=sprint_id).select_related("task")
+    tasks = [item.task for item in sprint_items]
+
+
+    result = []
+    for t in tasks:
+        result.append({
+            "taskId": t.task_id,
+            "title": t.tasks,
+            "skillsRequired": t.skills_required,
+            "estimatedHours": t.estimated_hours
+        })
+
+    return JsonResponse({"success": True, "data": result}, status=200)
+
+
+# ==========================================================
+# 2) SCRUM MASTER — AUTO ASSIGN USING ILP
+# ==========================================================
+@csrf_exempt
+def auto_assign_tasks_ilp(request, sprint_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    workspace, error = get_workspace_from_request(request)
+    if error:
+        return error
+
+    # Unassigned tasks
+    assigned_ids = TaskAssignment.objects.filter(
+        workspace=workspace, sprint_id=sprint_id
+    ).values_list("task__task_id", flat=True)
+
+    tasks = list(Backlog.objects.filter(sprint_id=sprint_id).exclude(task_id__in=assigned_ids))
+    team = list(TeamMember.objects.filter(workspace=workspace))
+
+    if not tasks:
+        return JsonResponse({"error": "No unassigned tasks found."}, status=400)
+    if not team:
+        return JsonResponse({"error": "No team members found."}, status=400)
+
+    # Build ILP optimization model
+    model = pulp.LpProblem("TaskAssignment", pulp.LpMaximize)
+
+    # Variables: x_(task,member) = 1 if member assigned to task
+    x = {}
+    for t in tasks:
+        for m in team:
+            x[(t.task_id, m.id)] = pulp.LpVariable(f"x_{t.task_id}_{m.id}", 0, 1, pulp.LpBinary)
+
+    # Objective: Maximize skill match - workload overload
+    objective = []
+    for t in tasks:
+        required = []
+        if t.skills_required:
+            required = [s.strip().lower() for s in t.skills_required.split(",")]
+
+        for m in team:
+            member_skills = [s.lower() for s in m.skills] if m.skills else []
+            overlap = len(set(required) & set(member_skills))
+            score = overlap * 10  # skill weight
+
+            remaining = m.capacityHours - m.assignedHours
+            capacity_score = max(remaining, 0)
+
+            objective.append((score * x[(t.task_id, m.id)]) + ((capacity_score/5) * x[(t.task_id, m.id)]))
+
+
+    model += pulp.lpSum(objective)
+
+    # Constraint: Each task assigned to ONE member
+    for t in tasks:
+        model += pulp.lpSum([x[(t.task_id, m.id)] for m in team]) == 1
+
+    # Constraint: Developer workload cannot exceed capacity
+    for m in team:
+        model += pulp.lpSum([
+            (t.estimated_hours or 0) * x[(t.task_id, m.id)]
+            for t in tasks
+        ]) <= (m.capacityHours - m.assignedHours)
+
+    # Solve ILP
+    model.solve(pulp.PULP_CBC_CMD(msg=False))
+
+    created_assignments = []
+    for t in tasks:
+        for m in team:
+            if pulp.value(x[(t.task_id, m.id)]) == 1:
+                assignment = TaskAssignment.objects.create(
+                    workspace=workspace,
+                    task=t,
+                    member=m,
+                    sprint_id=sprint_id,
+                    status="SUGGESTED",
+                    source="AUTO",
+                )
+                created_assignments.append({
+                    "taskId": t.task_id,
+                    "developerId": m.id,
+                    "taskTitle": t.tasks,
+                    "estimatedHours": t.estimated_hours,
+                })
+
+    return JsonResponse({
+        "success": True,
+        "message": f"{len(created_assignments)} tasks auto-assigned using ILP",
+        "assignments": created_assignments
+    }, status=201)
+
+
+# ==========================================================
+# 3) SCRUM MASTER — MANUAL ASSIGNMENT
+# ==========================================================
+@csrf_exempt
+def manual_assign_task(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    workspace, error = get_workspace_from_request(request)
+    if error:
+        return error
+
+    data = json.loads(request.body)
+    task_id = data.get("taskId")
+    member_id = data.get("memberId")
+    sprint_id = data.get("sprintId")
+
+    if not (task_id and member_id):
+        return JsonResponse({"error": "taskId and memberId required"}, status=400)
+
+    try:
+        task = Backlog.objects.get(task_id=task_id)
+        member = TeamMember.objects.get(id=member_id, workspace=workspace)
+    except:
+        return JsonResponse({"error": "Task or member not found"}, status=404)
+
+    if member.assignedHours + (task.estimated_hours or 0) > member.capacityHours:
+        return JsonResponse({"error": "Developer capacity exceeded"}, status=400)
+
+    assignment = TaskAssignment.objects.create(
+        workspace=workspace,
+        task=task,
+        member=member,
+        sprint_id=sprint_id,
+        status="SUGGESTED",
+        source="MANUAL",
+    )
+
+    return JsonResponse({"success": True, "assignment": {
+        "taskId": task.task_id,
+        "memberId": member.id,
+        "status": assignment.status
+    }}, status=201)
+
+
+# ==========================================================
+# 4) DEVELOPER — GET PENDING ASSIGNMENTS
+# ==========================================================
+@csrf_exempt
+def get_pending_assignments(request):
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+
+    workspace, error = get_workspace_from_request(request)
+    if error:
+        return error
+
+    member_id = request.GET.get("memberId")
+    if not member_id:
+        return JsonResponse({"error": "memberId required"}, status=400)
+
+    assignments = TaskAssignment.objects.filter(
+        workspace=workspace,
+        member_id=member_id,
+        status="SUGGESTED"
+    ).select_related("task")
+
+    result = []
+    for a in assignments:
+        result.append({
+            "assignmentId": a.id,
+            "taskTitle": a.task.tasks,
+            "estimatedHours": a.task.estimated_hours,
+            "source": a.source,
+            "suggestedAt": a.suggested_at,
+        })
+
+    return JsonResponse({"success": True, "data": result}, status=200)
+
+
+# ==========================================================
+# 5) DEVELOPER — ACCEPT ASSIGNMENT
+# ==========================================================
+@csrf_exempt
+def accept_assignment(request, assignment_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    workspace, error = get_workspace_from_request(request)
+    if error:
+        return error
+
+    assignment = TaskAssignment.objects.get(id=assignment_id, workspace=workspace)
+
+    if assignment.status != "SUGGESTED":
+        return JsonResponse({"error": "Already accepted/rejected"}, status=400)
+
+    member = assignment.member
+    estimated = assignment.task.estimated_hours or 0
+
+    if member.assignedHours + estimated > member.capacityHours:
+        return JsonResponse({"error": "Capacity exceeded"}, status=409)
+
+    member.assignedHours += estimated
+    member.save()
+
+    assignment.status = "ACCEPTED"
+    assignment.accepted_at = timezone.now()
+    assignment.save()
+
+    return JsonResponse({"success": True, "message": "Accepted"}, status=200)
+
+
+# ==========================================================
+# 6) DEVELOPER — REJECT ASSIGNMENT
+# ==========================================================
+@csrf_exempt
+def reject_assignment(request, assignment_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    workspace, error = get_workspace_from_request(request)
+    if error:
+        return error
+
+    data = json.loads(request.body)
+    reason = data.get("reason", "")
+
+    assignment = TaskAssignment.objects.get(id=assignment_id, workspace=workspace)
+
+    if assignment.status != "SUGGESTED":
+        return JsonResponse({"error": "Already accepted/rejected"}, status=400)
+
+    assignment.status = "REJECTED"
+    assignment.reason = reason
+    assignment.rejected_at = timezone.now()
+    assignment.save()
+
+    return JsonResponse({"success": True, "message": "Rejected"}, status=200)
+
+
+# ==========================================================
+# 7) DEVELOPER — MY TASKS
+# ==========================================================
+@csrf_exempt
+def get_my_tasks(request):
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+
+    workspace, error = get_workspace_from_request(request)
+    if error:
+        return error
+
+    member_id = request.GET.get("memberId")
+
+    assignments = TaskAssignment.objects.filter(
+        workspace=workspace,
+        member_id=member_id,
+        status="ACCEPTED"
+    ).select_related("task")
+
+    data = [{
+        "assignmentId": a.id,
+        "taskTitle": a.task.tasks,
+        "estimatedHours": a.task.estimated_hours,
+        "acceptedAt": a.accepted_at
+    } for a in assignments]
+
+    return JsonResponse({"success": True, "data": data}, status=200)
+
+
+# ==========================================================
+# 8) PRODUCT OWNER — OVERVIEW
+# ==========================================================
+@csrf_exempt
+def get_sprint_assignment_overview(request, sprint_id):
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+
+    workspace, error = get_workspace_from_request(request)
+    if error:
+        return error
+
+    assignments = TaskAssignment.objects.filter(
+        workspace=workspace,
+        sprint_id=sprint_id
+    ).select_related("task", "member")
+
+    result = []
+    for a in assignments:
+        result.append({
+            "taskId": a.task.task_id,
+            "taskTitle": a.task.tasks,
+            "developer": a.member.name,
+            "status": a.status,
+            "acceptedAt": a.accepted_at,
+            "rejectedAt": a.rejected_at,
+            "source": a.source,
+            "reason": a.reason
+        })
+
+    return JsonResponse({"success": True, "data": result}, status=200)
+
+
+# ==========================================================
+# 9) PRODUCT OWNER — SPRINT SUMMARY
+# ==========================================================
+@csrf_exempt
+def get_sprint_summary(request, sprint_id):
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+
+    workspace, error = get_workspace_from_request(request)
+    if error:
+        return error
+
+    members = TeamMember.objects.filter(workspace=workspace)
+
+    result = []
+    for m in members:
+        assigned = TaskAssignment.objects.filter(
+            workspace=workspace,
+            sprint_id=sprint_id,
+            member=m,
+            status="ACCEPTED",
+        ).select_related("task")
+
+        total_hours = sum(a.task.estimated_hours or 0 for a in assigned)
+
+        result.append({
+            "developer": m.name,
+            "capacity": m.capacityHours,
+            "assigned": total_hours
+        })
+
+    return JsonResponse({"success": True, "summary": result}, status=200)
+
+
+
+@csrf_exempt
+def get_my_notifications(request):
+    workspace, error = get_workspace_from_request(request)
+    if error:
+        return error
+
+    email = request.GET.get("email")
+    if not email:
+        return JsonResponse({"error": "email is required"}, status=400)
+
+    notifs = Notification.objects.filter(
+        workspace=workspace,
+        user_email=email
+    ).order_by("-created_at")
+
+    data = [{
+        "id": n.id,
+        "title": n.title,
+        "message": n.message,
+        "type": n.type,
+        "isRead": n.is_read,
+        "createdAt": n.created_at.isoformat()
+    } for n in notifs]
+
+    return JsonResponse({"success": True, "data": data}, status=200)
+
+
+@csrf_exempt
+def mark_notifications_read(request):
+    workspace, error = get_workspace_from_request(request)
+    if error:
+        return error
+
+    data = json.loads(request.body)
+    email = data.get("email")
+
+    Notification.objects.filter(
+        workspace=workspace,
+        user_email=email,
+        is_read=False
+    ).update(is_read=True)
+
+    return JsonResponse({"success": True})
+
+
+
+@csrf_exempt
+def get_all_assignments(request, sprint_id):
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+
+    workspace, error = get_workspace_from_request(request)
+    if error:
+        return error
+
+    # Get all sprint items (tasks inside that sprint)
+    sprint_items = SprintItem.objects.filter(
+        sprint_id=sprint_id,
+        sprint__workspace=workspace
+    ).select_related("task")
+
+    task_ids = [item.task.id for item in sprint_items]
+
+    # Get all assignments for those tasks
+    assignments = TaskAssignment.objects.filter(
+        workspace=workspace,
+        sprint_id=sprint_id,
+        task_id__in=task_ids
+    ).select_related("task", "member")
+
+    result = []
+
+    for a in assignments:
+        result.append({
+            "assignmentId": a.id,
+            "taskId": a.task.task_id,
+            "taskTitle": a.task.tasks,
+            "developer": a.member.name,
+            "developerId": a.member.id,
+            "status": a.status,
+            "source": a.source,
+            "matchScore": a.match_score,
+            "reason": a.reason,
+            "suggestedAt": a.suggested_at,
+            "acceptedAt": a.accepted_at,
+            "rejectedAt": a.rejected_at,
+        })
+
+    return JsonResponse({"success": True, "assignments": result}, status=200)
+
+
+@csrf_exempt
+def get_my_suggestions(request):
+    if request.method != "GET":
+        return JsonResponse({"error": "GET method required"}, status=400)
+
+    workspace, error_response = get_workspace_from_request(request)
+    if error_response:
+        return error_response
+
+    member_id = request.GET.get("memberId")
+    if not member_id:
+        return JsonResponse({"error": "memberId query parameter is required."}, status=400)
+
+    # Validate developer exists inside workspace
+    try:
+        member = TeamMember.objects.get(id=member_id, workspace=workspace)
+    except TeamMember.DoesNotExist:
+        return JsonResponse({"error": "Team member not found in this workspace."}, status=404)
+
+    # Suggested assignments for this member
+    assignments = TaskAssignment.objects.filter(
+        workspace=workspace,
+        member=member,
+        status="SUGGESTED",
+    ).select_related("task").order_by("-suggested_at")
+
+    result = []
+    for a in assignments:
+        result.append({
+            "assignmentId": a.id,
+            "taskId": a.task.task_id,
+            "taskTitle": a.task.tasks,
+            "estimatedHours": a.task.estimated_hours,
+            "sprintId": a.sprint_id,
+            "status": a.status,
+            "source": a.source,
+            "matchScore": a.match_score,
+            "reason": a.reason,
+            "suggestedAt": a.suggested_at.isoformat(),
+        })
+
+    return JsonResponse({"success": True, "data": result}, status=200)
+
+
+@csrf_exempt
+def get_pending_assignments(request):
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+
+    workspace, error = get_workspace_from_request(request)
+    if error:
+        return error
+
+    member_id = request.GET.get("memberId")
+    if not member_id:
+        return JsonResponse({"error": "memberId required"}, status=400)
+
+    assignments = TaskAssignment.objects.filter(
+        workspace=workspace,
+        member_id=member_id,
+        status="SUGGESTED"
+    ).select_related("task")
+
+    result = []
+    for a in assignments:
+        result.append({
+            "assignmentId": a.id,
+            "taskTitle": a.task.tasks,
+            "estimatedHours": a.task.estimated_hours,
+            "source": a.source,
+            "suggestedAt": a.suggested_at.isoformat(),
+        })
+
+    return JsonResponse({"success": True, "data": result}, status=200)
+

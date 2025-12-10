@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     # local apps
     # New Module 2 App
     "assignment_module",
+    "sprintmanager",
     'authsystem',
 
 ]
