@@ -7,6 +7,7 @@ from django.contrib.auth.hashers import make_password, check_password
 from .models import AdminWorkspace
 import secrets
 from .models import AdminWorkspace, TeamMember, ManagementUser, InvitationToken
+from userstorymanager.models import ProductOwner
 
 import requests
 from django.conf import settings
@@ -409,16 +410,19 @@ def login_user(request):
     # ------------------------------------------------------
     try:
         user = ManagementUser.objects.get(email__iexact=email)
+        user2=ProductOwner.objects.get(email__iexact=email)
 
         if check_password(password, user.password):
             workspace = user.workspace
+           
+
 
             # Determine portal route
             redirect_map = {
                 "SCRUM_MASTER": "/scrum-master/dashboard",
                 "PRODUCT_OWNER": "/product-owner/dashboard",
             }
-
+           
             return JsonResponse(
                 {
                     "success": True,
@@ -436,6 +440,7 @@ def login_user(request):
                 },
                 status=200,
             )
+
 
     except ManagementUser.DoesNotExist:
         pass
@@ -471,7 +476,35 @@ def login_user(request):
         pass
 
     # ------------------------------------------------------
-    # 3️⃣ INVALID LOGIN
+    # 3️⃣ TRY PRODUCT OWNER (from userstorymanager app)
+    # ------------------------------------------------------
+    try:
+        owner = ProductOwner.objects.get(email__iexact=email)
+
+        # ProductOwner stores plaintext password in DB
+        if owner.password == password:
+            return JsonResponse(
+                {
+                    "success": True,
+                    "message": "Login successful.",
+                    "user": {
+                        "id": owner.id,
+                        "name": getattr(owner, "name", owner.email),
+                        "email": owner.email,
+                        "role": "PRODUCT_OWNER",
+                        "userType": "PRODUCT_OWNER",
+                        "company": owner.company_name,
+                        "redirectTo": "/product-owner/dashboard",
+                    },
+                },
+                status=200,
+            )
+
+    except ProductOwner.DoesNotExist:
+        pass
+
+    # ------------------------------------------------------
+    # 4️⃣ INVALID LOGIN
     # ------------------------------------------------------
     return JsonResponse(
         {"success": False, "error": "Invalid email or password."},

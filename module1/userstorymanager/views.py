@@ -170,10 +170,10 @@ def product_owner_create(request):
             email=data["email"],
             password=data["password"],
             company_name=data["company_name"],
+            workspace_id=data.get("workspace_id"),
         )
-        return JsonResponse({"id": owner.id, "message": "Owner created successfully"})
+        return JsonResponse({"id": owner.id, "workspace_id": owner.workspace_id, "message": "Owner created successfully"})
     return JsonResponse({"error": "Invalid request method"}, status=405)
-
 
 @csrf_exempt
 def product_owner_update(request, pk):
@@ -185,12 +185,14 @@ def product_owner_update(request, pk):
             owner.email = data.get("email", owner.email)
             owner.password = data.get("password", owner.password)
             owner.company_name = data.get("company_name", owner.company_name)
+            # Update workspace_id if provided
+            if 'workspace_id' in data:
+                owner.workspace_id = data.get('workspace_id')
             owner.save()
             return JsonResponse({"message": "Owner updated successfully"})
         except ProductOwner.DoesNotExist:
             return JsonResponse({"error": "Owner not found"}, status=404)
     return JsonResponse({"error": "Invalid request method"}, status=405)
-
 
 @csrf_exempt
 def product_owner_delete(request, pk):
@@ -589,6 +591,7 @@ def update_user_story(request, user_story_id):
  
  
 @csrf_exempt
+@csrf_exempt
 def get_product_owner_by_email(request):
     """
     GET endpoint to find a ProductOwner by email.
@@ -600,7 +603,7 @@ def get_product_owner_by_email(request):
             return JsonResponse({"error": "Email query parameter is required"}, status=400)
         try:
             owner_data = ProductOwner.objects.filter(email=email).values(
-                "id", "name", "email", "company_name", "created_at"
+                "id", "name", "email", "company_name", "workspace_id", "created_at"
             ).first()
             if not owner_data:
                 return JsonResponse({"error": "Owner not found"}, status=404)
@@ -613,7 +616,6 @@ def get_product_owner_by_email(request):
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
     return JsonResponse({"error": "Invalid request method"}, status=405)
-
 @csrf_exempt
 def project_detail(request, owner):
     """

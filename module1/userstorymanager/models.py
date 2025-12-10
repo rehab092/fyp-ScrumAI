@@ -9,6 +9,16 @@ class ProductOwner(models.Model):
     company_name = models.CharField(max_length=150)
 
     created_at = models.DateTimeField(auto_now_add=True)
+  # ForeignKey to AdminWorkspace in the `assignment` app.
+    # Keep the DB column name `workspace_id` for backwards compatibility.
+    workspace = models.ForeignKey(
+        'assignment_module.AdminWorkspace',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='product_owners',
+        db_column='workspace_id',
+    )
 
     def __str__(self):
         return self.name
