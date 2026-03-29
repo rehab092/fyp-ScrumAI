@@ -79,4 +79,5 @@ urlpatterns = [
 
     # Suggestion API (already implemented by you)
     path("assignment/my-suggestions/", get_my_suggestions, name="get_my_suggestions"),
+  
 ]

@@ -24,6 +24,7 @@ urlpatterns = [
     path('userstories/', include('userstorymanager.urls')),
     path('api/module2/', include('assignment_module.urls')),
     path("api/auth/", include("authsystem.urls")),
+    path('api/sprints/', include('sprintmanager.urls')),
    
 
     
