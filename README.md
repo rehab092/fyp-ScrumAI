@@ -86,7 +86,7 @@ npm start
 🔹 Backend
 
 ```python
-cd backend
+cd module1
 # create virtual environment (recommended)
 python -m venv venv
 
