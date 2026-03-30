@@ -39,20 +39,24 @@ export default function ProductOwnerForm({ onClose, onSuccess }) {
         .map((skill) => skill.trim())
         .filter((skill) => skill.length > 0);
 
+        const company=localStorage.getItem('companyName');
+          const workspaceId = localStorage.getItem('workspaceId');
+      if (!workspaceId) {
+        throw new Error("Workspace ID not found. Please log in again.");
+      }
       // Prepare request data - role is automatically set to PRODUCT_OWNER
       const requestData = {
         name: formData.name.trim(),
         email: formData.email.trim(),
         role: "PRODUCT_OWNER", // Automatically set - backend expects uppercase
-        skills: skillsArray,
+       
+        company_name: company,
+        workspace_id: workspaceId,
       };
 
-      const workspaceId = localStorage.getItem('workspaceId');
-      if (!workspaceId) {
-        throw new Error("Workspace ID not found. Please log in again.");
-      }
+    
 
-      const fetchResponse = await fetch(LOGIN_ENDPOINTS.management.addManagementUser, {
+      const fetchResponse = await fetch(LOGIN_ENDPOINTS.auth.signup,{
         method: "POST",
         headers: {
           "Content-Type": "application/json",

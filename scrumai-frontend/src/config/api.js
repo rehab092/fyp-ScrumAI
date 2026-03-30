@@ -40,7 +40,8 @@ export const LOGIN_ENDPOINTS = {
     upload: `${API_BASE_URL}userstories/create_backlog/`, // Upload with FormData
     getById: (id) => `${API_BASE_URL}userstories/${id}`,
     update: (id) => `${API_BASE_URL}userstories/${id}`,
-    delete: (id) => `${API_BASE_URL}userstories/${id}`,
+    delete: (id) => `${API_BASE_URL}userstories/story/${id}/delete/`,
+
   },
 
   // // Backlog Endpoints
@@ -59,13 +60,12 @@ export const LOGIN_ENDPOINTS = {
     update: (id) => `${API_BASE_URL}sprints/${id}`,
     delete: (id) => `${API_BASE_URL}sprints/${id}`,
   },
-  projects: {
+   projects: {
     getAll: `${API_BASE_URL}projects/`, // Get all projects
     getByOwner: (ownerId) => `${API_BASE_URL}userstories/projects/owner/${ownerId}/`, // Get projects by owner
-<<<<<<< Updated upstream
-=======
-    getIdByName: (name) => `${API_BASE_URL}/userstories/project/id_by_name/?name=${encodeURIComponent(name)}`,
->>>>>>> Stashed changes
+    getIdByName: (name) => `${API_BASE_URL}userstories/project/id_by_name/?name=${encodeURIComponent(name)}`,
+    create: `${API_BASE_URL}userstories/project/create/`, // Create project (POST)
+    getUserStoryByProjectId: (projectId) => `${API_BASE_URL}userstories/us/projects/${projectId}/stories/`, // Get project for a user story
   },
 
   // Tasks Endpoints

@@ -76,7 +76,6 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-<<<<<<< Updated upstream
   useEffect(() => {
     // Initial session check
     checkSession();
@@ -118,6 +117,8 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password, role, backendUser = null) => {
     setLoading(true);
     
+    console.log("AuthContext.login() called with backendUser:", backendUser);
+    
     // Use backend user data if provided, otherwise create mock
     const userData = backendUser ? {
       id: backendUser.id,
@@ -125,45 +126,10 @@ export const AuthProvider = ({ children }) => {
       role: backendUser.role,
       name: backendUser.name,
       type: backendUser.type, // MANAGEMENT or TEAM_MEMBER
+      owner_id: backendUser.owner_id, // Include owner_id from backend
       avatar: (backendUser.name || email).split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2),
       loginTime: new Date().toISOString()
     } : {
-=======
-  const login = async (email, password, role, backendUser = null, backendToken = null) => {
-    // Simulate API call
-    setLoading(true);
-    // If backend provided a user object, use it and persist token
-    if (backendUser) {
-      // Normalize backend user fields
-      const userObj = {
-        id: backendUser.owner_id ?? backendUser.id ?? Date.now(),
-        email: backendUser.email ?? email,
-        role: backendUser.role ?? role,
-        name: backendUser.name ?? (email ? email.split('@')[0].replace('.', ' ').replace(/\b\w/g, l => l.toUpperCase()) : ''),
-        avatar: backendUser.avatar ?? (email ? email.split('@')[0].substring(0, 2).toUpperCase() : ''),
-        owner_id: backendUser.owner_id ?? backendUser.id ?? undefined,
-        loginTime: new Date().toISOString()
-      };
-
-      // Persist user and token
-      setUser(userObj);
-      localStorage.setItem('scrumai_user', JSON.stringify(userObj));
-      if (backendToken) {
-        localStorage.setItem('authToken', backendToken);
-      }
-      if (userObj.owner_id) {
-        localStorage.setItem('ownerId', userObj.owner_id);
-      } else {
-        localStorage.removeItem('ownerId');
-      }
-
-      setLoading(false);
-      return userObj;
-    }
-
-    // No backend user provided: fall back to mock authentication
-    const mockUser = {
->>>>>>> Stashed changes
       id: Date.now(),
       email,
       role,
@@ -172,7 +138,8 @@ export const AuthProvider = ({ children }) => {
       loginTime: new Date().toISOString()
     };
 
-<<<<<<< Updated upstream
+    console.log("userData being stored:", userData);
+    
     setUser(userData);
     setSessionValid(true);
     
@@ -180,18 +147,17 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('scrumai_user', JSON.stringify(userData));
     localStorage.setItem('scrumai_session_timestamp', Date.now().toString());
     
+    
+    // Also store owner_id separately for easy access
+    if (backendUser && backendUser.owner_id) {
+      localStorage.setItem('ownerId', String(backendUser.owner_id));
+      console.log("AuthContext saved ownerId to localStorage:", backendUser.owner_id);
+    } else {
+      console.log("WARNING: No owner_id in backendUser!");
+    }
+    
     setLoading(false);
     return userData;
-=======
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    setUser(mockUser);
-    localStorage.setItem('scrumai_user', JSON.stringify(mockUser));
-    setLoading(false);
-
-    return mockUser;
->>>>>>> Stashed changes
   };
 
   const signup = async (name, email, password, role) => {

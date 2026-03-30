@@ -27,6 +27,7 @@ export default function Login() {
 
       // Use the role-based login endpoint (auth/login-user/)
       // Backend determines the role from DB (SCRUM_MASTER, PRODUCT_OWNER, or DEVELOPER)
+      localStorage.clear();
       const response = await fetch(LOGIN_ENDPOINTS.auth.roleLogin, {
         method: 'POST',
         headers: {
@@ -37,17 +38,46 @@ export default function Login() {
           password: formData.password,
         }),
       });
-
+       
       const data = await response.json();
 
       if (!response.ok || !data.success) {
         throw new Error(data.error || "Invalid email or password");
       }
 
-      const { user } = data;
+      const { user, token } = data;
+      
+      console.log("Full response data:", data);
+      console.log("user object:", user);
+      console.log("user.owner_id:", user?.owner_id);
+      console.log("user.id:", user?.id);
+      console.log("data.owner_id:", data.owner_id);
+      
+      // Owner ID could be at data level or user level - try multiple fields
+      const ownerId = data.owner_id || user?.owner_id || user?.workspace_id || user?.id;
+      
+      console.log("Extracted ownerId:", ownerId);
+      
+      if (!ownerId) {
+        console.warn("WARNING: No ownerId found in response! Check backend response structure.");
+      }
+      
+      // Save token and owner_id to localStorage BEFORE calling login()
+      if (token) {
+        localStorage.setItem('authToken', token);
+        console.log("Saved authToken:", token);
+      }
+      if (ownerId) {
+        localStorage.setItem('ownerId', String(ownerId));
+        console.log("Saved ownerId to localStorage:", ownerId);
+      }
+      
+      // Add owner_id to user object so AuthContext.login can access it
+      const userWithOwnerId = { ...user, owner_id: ownerId };
+      console.log("userWithOwnerId being passed to login():", userWithOwnerId);
       
       // Login with backend user data - role comes from backend
-      const userData = await login(formData.email, formData.password, user.role, user);
+      const userData = await login(formData.email, formData.password, user.role, userWithOwnerId);
       
       // Redirect based on backend-determined role
       const redirectPath = getRedirectPath(user.role);
