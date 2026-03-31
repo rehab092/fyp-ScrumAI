@@ -6,7 +6,7 @@ from django.conf import settings
 import secrets
 import requests
 from django.contrib.auth.hashers import make_password
-from assignment_module.models import AdminWorkspace
+from assignment_module.models import AdminWorkspace, ManagementUser
 from .models import ProductOwner, UserStory, Backlog, Project
 
 import json
@@ -177,6 +177,13 @@ def product_owner_create(request):
             password=hashed_password,
             company_name=data["company_name"],
             workspace_id=data.get("workspace_id"),
+        )
+         #Also add productowner in the management user table 
+        management_user = ManagementUser.objects.create(
+            name=owner.name,
+            email=owner.email,
+            role="PRODUCT_OWNER",
+            workspace_id=owner.workspace_id
         )
         workspace = AdminWorkspace.objects.get(id=owner.workspace_id)
     # Send EmailJS invitation
