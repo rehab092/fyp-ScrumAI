@@ -62,6 +62,7 @@ export const LOGIN_ENDPOINTS = {
   },
    projects: {
     getAll: `${API_BASE_URL}projects/`, // Get all projects
+    getAllFromUserStories: `${API_BASE_URL}userstories/projects/`, // Fallback catalog for dependency page
     getByOwner: (ownerId) => `${API_BASE_URL}userstories/projects/owner/${ownerId}/`, // Get projects by owner
     getIdByName: (name) => `${API_BASE_URL}userstories/project/id_by_name/?name=${encodeURIComponent(name)}`,
     create: `${API_BASE_URL}userstories/project/create/`, // Create project (POST)
@@ -74,6 +75,11 @@ export const LOGIN_ENDPOINTS = {
     getByUserStory: (userStoryId) => `${API_BASE_URL}userstories/tasks/${userStoryId}/`, // Get tasks for a user story
     update: (taskId) => `${API_BASE_URL}userstories/task/${taskId}/update/`, // Update task
     delete: (taskId) => `${API_BASE_URL}userstories/task/${taskId}/delete/`, // Delete task
+  },
+
+  // Dependency Endpoints
+  dependencies: {
+    getByProject: (projectId) => `${API_BASE_URL}api/dependencies/project/${projectId}/`,
   },
 
   // Team Members Endpoints (require Workspace-ID header)
