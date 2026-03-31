@@ -17,6 +17,7 @@ media/
 staticfiles/
 
 # Environment vars
+.env
 *.env
 .env.*
 secrets.json
@@ -30,3 +31,9 @@ venv3*/
 venv31*/
 module1/venv*/
 module1/env*/
+
+# Local ML model artifacts
+ml_models/
+**/checkpoint/
+*.safetensors
+*.bin

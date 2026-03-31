@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "assignment_module",
     "sprintmanager",
     'authsystem',
+    "taskdependency",
 
 ]
 # ADD THIS - Allow custom headers including Workspace-ID

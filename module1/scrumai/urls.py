@@ -25,6 +25,7 @@ urlpatterns = [
     path('api/module2/', include('assignment_module.urls')),
     path("api/auth/", include("authsystem.urls")),
     path('api/sprints/', include('sprintmanager.urls')),
+    path('api/dependencies/', include('taskdependency.urls')),
    
 
     
