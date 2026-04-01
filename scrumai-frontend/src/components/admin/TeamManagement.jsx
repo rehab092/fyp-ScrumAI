@@ -10,6 +10,9 @@ export default function TeamManagement({ workspaceInfo }) {
   const [showAddTeamMember, setShowAddTeamMember] = useState(false);
   const [showAddScrumMaster, setShowAddScrumMaster] = useState(false);
   const [showAddProductOwner, setShowAddProductOwner] = useState(false);
+  const [showEditTeamMember, setShowEditTeamMember] = useState(false);
+  const [showEditScrumMaster, setShowEditScrumMaster] = useState(false);
+  const [showEditProductOwner, setShowEditProductOwner] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -133,7 +136,13 @@ export default function TeamManagement({ workspaceInfo }) {
   // Handle Edit Member
   const handleEditMember = (member) => {
     setEditingMember(member);
-    setShowAddTeamMember(true);
+    if (member.memberType === "developer") {
+      setShowEditTeamMember(true);
+    } else if (member.memberType === "scrumMaster") {
+      setShowEditScrumMaster(true);
+    } else if (member.memberType === "productOwner") {
+      setShowEditProductOwner(true);
+    }
   };
 
   // Handle Delete Member
@@ -399,6 +408,21 @@ export default function TeamManagement({ workspaceInfo }) {
             setEditingMember(null);
             fetchMembers();
           }}
+          editMember={null}
+        />
+      )}
+
+      {showEditTeamMember && editingMember && (
+        <TeamMemberForm
+          onClose={() => {
+            setShowEditTeamMember(false);
+            setEditingMember(null);
+          }}
+          onSuccess={() => {
+            setShowEditTeamMember(false);
+            setEditingMember(null);
+            fetchMembers();
+          }}
           editMember={editingMember}
         />
       )}
@@ -410,6 +434,22 @@ export default function TeamManagement({ workspaceInfo }) {
             setShowAddScrumMaster(false);
             fetchMembers();
           }}
+          editMember={null}
+        />
+      )}
+
+      {showEditScrumMaster && editingMember && (
+        <ScrumMasterForm
+          onClose={() => {
+            setShowEditScrumMaster(false);
+            setEditingMember(null);
+          }}
+          onSuccess={() => {
+            setShowEditScrumMaster(false);
+            setEditingMember(null);
+            fetchMembers();
+          }}
+          editMember={editingMember}
         />
       )}
 
@@ -420,9 +460,24 @@ export default function TeamManagement({ workspaceInfo }) {
             setShowAddProductOwner(false);
             fetchMembers();
           }}
+          editMember={null}
+        />
+      )}
+
+      {showEditProductOwner && editingMember && (
+        <ProductOwnerForm
+          onClose={() => {
+            setShowEditProductOwner(false);
+            setEditingMember(null);
+          }}
+          onSuccess={() => {
+            setShowEditProductOwner(false);
+            setEditingMember(null);
+            fetchMembers();
+          }}
+          editMember={editingMember}
         />
       )}
     </div>
   );
 }
-

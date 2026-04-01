@@ -1,15 +1,26 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { LOGIN_ENDPOINTS } from "../../config/api";
 
-export default function ScrumMasterForm({ onClose, onSuccess }) {
+export default function ScrumMasterForm({ onClose, onSuccess, editMember = null }) {
   const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    skills: "",
+    name: editMember?.name || "",
+    email: editMember?.email || "",
+    skills: editMember?.skills ? editMember.skills.join(", ") : "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Update form data when editMember changes
+  useEffect(() => {
+    if (editMember) {
+      setFormData({
+        name: editMember.name || "",
+        email: editMember.email || "",
+        skills: editMember.skills ? (Array.isArray(editMember.skills) ? editMember.skills.join(", ") : editMember.skills) : "",
+      });
+    }
+  }, [editMember]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -29,7 +40,7 @@ export default function ScrumMasterForm({ onClose, onSuccess }) {
       if (!formData.name.trim()) {
         throw new Error("Name is required");
       }
-      if (!formData.email.trim()) {
+      if (!editMember && !formData.email.trim()) {
         throw new Error("Email is required");
       }
 
@@ -39,21 +50,34 @@ export default function ScrumMasterForm({ onClose, onSuccess }) {
         .map((skill) => skill.trim())
         .filter((skill) => skill.length > 0);
 
-      // Prepare request data - role is automatically set to SCRUM_MASTER
-      const requestData = {
-        name: formData.name.trim(),
-        email: formData.email.trim(),
-        role: "SCRUM_MASTER", // Automatically set - backend expects uppercase
-        skills: skillsArray,
-      };
+      // Prepare request data
+      const requestData = editMember
+        ? {
+            // For update, only send fields that changed
+            name: formData.name.trim(),
+            skills: skillsArray,
+          }
+        : {
+            // For create, include email and role
+            name: formData.name.trim(),
+            email: formData.email.trim(),
+            role: "SCRUM_MASTER", // Automatically set - backend expects uppercase
+            skills: skillsArray,
+          };
 
       const workspaceId = localStorage.getItem('workspaceId');
       if (!workspaceId) {
         throw new Error("Workspace ID not found. Please log in again.");
       }
 
-      const fetchResponse = await fetch(LOGIN_ENDPOINTS.management.addManagementUser, {
-        method: "POST",
+      // Determine endpoint and method
+      const endpoint = editMember
+        ? LOGIN_ENDPOINTS.management.updateManagementUser(editMember.id)
+        : LOGIN_ENDPOINTS.management.addManagementUser;
+      const method = editMember ? "PUT" : "POST";
+
+      const fetchResponse = await fetch(endpoint, {
+        method: method,
         headers: {
           "Content-Type": "application/json",
           "Accept": "application/json",
@@ -74,8 +98,10 @@ export default function ScrumMasterForm({ onClose, onSuccess }) {
       }
 
       // Show success message with credentials (if available)
-      if (response.credentials) {
+      if (!editMember && response.credentials) {
         alert(`Scrum Master created successfully!\n\nEmail: ${response.credentials.email}\nPassword: ${response.credentials.password}\n\nCredentials have been sent via email.`);
+      } else if (editMember) {
+        alert("Scrum Master updated successfully!");
       }
 
       // Reset form
@@ -90,35 +116,35 @@ export default function ScrumMasterForm({ onClose, onSuccess }) {
       }
     } catch (err) {
       console.error('Error details:', err);
-      setError(err.message || "Failed to add Scrum Master");
+      setError(err.message || `Failed to ${editMember ? "update" : "add"} Scrum Master`);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.9 }}
-        className="bg-[#1a202c]/95 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-700/50"
+        className="bg-[#1a202c]/95 rounded-2xl shadow-2xl w-full max-w-sm sm:max-w-md overflow-hidden border border-slate-700/50 max-h-[90vh] flex flex-col"
       >
         {/* Header */}
-        <div className="bg-gradient-to-r from-secondary to-secondaryDark p-6 text-white border-b border-slate-600/50">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold flex items-center gap-2">
+        <div className="bg-gradient-to-r from-secondary to-secondaryDark p-4 sm:p-6 text-white border-b border-slate-600/50 flex-shrink-0">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
                 <span>🎯</span>
-                Add Scrum Master
+                <span className="truncate">{editMember ? "Edit Scrum Master" : "Add Scrum Master"}</span>
               </h2>
-              <p className="text-white/80 text-sm mt-1">
-                Create a new Scrum Master profile
+              <p className="text-white/80 text-xs sm:text-sm mt-1">
+                {editMember ? "Update Scrum Master information" : "Create a new Scrum Master profile"}
               </p>
             </div>
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 transition-all flex items-center justify-center"
+              className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 transition-all flex items-center justify-center flex-shrink-0"
             >
               ✕
             </button>
@@ -126,16 +152,16 @@ export default function ScrumMasterForm({ onClose, onSuccess }) {
         </div>
 
         {/* Form Content */}
-        <div className="p-6 bg-white">
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="p-4 sm:p-6 bg-white overflow-y-auto flex-1">
+          <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
             {error && (
-              <div className="bg-red-500/20 border border-red-500/50 text-red-700 px-4 py-3 rounded-lg text-sm">
+              <div className="bg-red-500/20 border border-red-500/50 text-red-700 px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-xs sm:text-sm">
                 {error}
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1 sm:mb-2">
                 Name *
               </label>
               <input
@@ -144,28 +170,30 @@ export default function ScrumMasterForm({ onClose, onSuccess }) {
                 value={formData.name}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary bg-white text-slate-900 placeholder:text-slate-400 transition-all"
+                className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary bg-white text-slate-900 placeholder:text-slate-400 transition-all text-sm"
                 placeholder="Enter Scrum Master name"
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Email *
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                required
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary bg-white text-slate-900 placeholder:text-slate-400 transition-all"
-                placeholder="scrummaster@example.com"
-              />
-            </div>
+            {!editMember && (
+              <div>
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1 sm:mb-2">
+                  Email *
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary bg-white text-slate-900 placeholder:text-slate-400 transition-all text-sm"
+                  placeholder="scrummaster@example.com"
+                />
+              </div>
+            )}
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1 sm:mb-2">
                 Skills
               </label>
               <input
@@ -173,7 +201,7 @@ export default function ScrumMasterForm({ onClose, onSuccess }) {
                 name="skills"
                 value={formData.skills}
                 onChange={handleChange}
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary bg-white text-slate-900 placeholder:text-slate-400 transition-all"
+                className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary bg-white text-slate-900 placeholder:text-slate-400 transition-all text-sm"
                 placeholder="Comma-separated (e.g., Agile, Scrum, Leadership)"
               />
               <p className="text-slate-500 text-xs mt-1">
@@ -182,18 +210,18 @@ export default function ScrumMasterForm({ onClose, onSuccess }) {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-2 sm:gap-3 pt-2 flex-col-reverse sm:flex-row">
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 px-6 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-all font-medium"
+                className="flex-1 px-4 sm:px-6 py-2 sm:py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-all font-medium text-sm"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 px-6 py-2.5 bg-gradient-to-r from-secondary to-secondaryDark text-white rounded-lg hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="flex-1 px-4 sm:px-6 py-2 sm:py-2.5 bg-gradient-to-r from-secondary to-secondaryDark text-white rounded-lg hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
               >
                 {loading ? (
                   <>
@@ -201,10 +229,10 @@ export default function ScrumMasterForm({ onClose, onSuccess }) {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    <span>Adding...</span>
+                    <span>{editMember ? "Updating..." : "Adding..."}</span>
                   </>
                 ) : (
-                  <span>Add Scrum Master</span>
+                  <span>{editMember ? "Update Scrum Master" : "Add Scrum Master"}</span>
                 )}
               </button>
             </div>
@@ -214,4 +242,3 @@ export default function ScrumMasterForm({ onClose, onSuccess }) {
     </div>
   );
 }
-

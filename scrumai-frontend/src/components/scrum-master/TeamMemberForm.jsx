@@ -8,6 +8,8 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
     email: editMember?.email || "",
     skills: editMember?.skills ? editMember.skills.join(", ") : "",
     capacityHours: editMember?.capacityHours || "",
+    experience: editMember?.experience || "",
+    pastProjects: editMember?.pastProjects || "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -20,6 +22,8 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
         email: editMember.email || "",
         skills: editMember.skills ? (Array.isArray(editMember.skills) ? editMember.skills.join(", ") : editMember.skills) : "",
         capacityHours: editMember.capacityHours || "",
+        experience: editMember.experience || "",
+        pastProjects: editMember.pastProjects || "",
       });
     }
   }, [editMember]);
@@ -54,6 +58,8 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
             name: formData.name.trim(),
             skills: skillsArray,
             capacityHours: parseFloat(formData.capacityHours),
+            experience: formData.experience ? parseInt(formData.experience) : null,
+            pastProjects: formData.pastProjects.trim() || null,
           }
         : {
             // For create, include email
@@ -61,6 +67,8 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
             email: formData.email.trim(),
             skills: skillsArray,
             capacityHours: parseFloat(formData.capacityHours),
+            experience: formData.experience ? parseInt(formData.experience) : null,
+            pastProjects: formData.pastProjects.trim() || null,
           };
 
       // Make API call - update if editing, create if new
@@ -123,6 +131,8 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
 
       // Reset form
       setFormData({
+        experience: "",
+        pastProjects: "",
         name: "",
         email: "",
         skills: "",
@@ -164,28 +174,28 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.9 }}
-        className="bg-[#1a202c]/95 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-700/50"
+        className="bg-[#1a202c]/95 rounded-2xl shadow-2xl w-full max-w-sm sm:max-w-md overflow-hidden border border-slate-700/50 max-h-[90vh] flex flex-col"
       >
         {/* Header */}
-        <div className="bg-gradient-to-r from-slate-700 to-slate-800 p-6 text-white border-b border-slate-600/50">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold flex items-center gap-2">
+        <div className="bg-gradient-to-r from-slate-700 to-slate-800 p-4 sm:p-6 text-white border-b border-slate-600/50 flex-shrink-0">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
                 <span>👤</span>
-                {editMember ? "Edit Team Member" : "Add Team Member"}
+                <span className="truncate">{editMember ? "Edit Team Member" : "Add Team Member"}</span>
               </h2>
-              <p className="text-white/80 text-sm mt-1">
+              <p className="text-white/80 text-xs sm:text-sm mt-1">
                 {editMember ? "Update team member information" : "Create a new team member profile"}
               </p>
             </div>
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 transition-all flex items-center justify-center"
+              className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 transition-all flex items-center justify-center flex-shrink-0"
             >
               ✕
             </button>
@@ -193,16 +203,16 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
         </div>
 
         {/* Form Content */}
-        <div className="p-6 bg-white">
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="p-4 sm:p-6 bg-white overflow-y-auto flex-1">
+          <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
             {error && (
-              <div className="bg-red-500/20 border border-red-500/50 text-red-700 px-4 py-3 rounded-lg text-sm">
+              <div className="bg-red-500/20 border border-red-500/50 text-red-700 px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-xs sm:text-sm">
                 {error}
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1 sm:mb-2">
                 Name *
               </label>
               <input
@@ -211,14 +221,14 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
                 value={formData.name}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 focus:border-slate-400 bg-white text-slate-900 placeholder:text-slate-400 transition-all"
+                className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 focus:border-slate-400 bg-white text-slate-900 placeholder:text-slate-400 transition-all text-sm"
                 placeholder="Enter team member name"
               />
             </div>
 
             {!editMember && (
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1 sm:mb-2">
                   Email *
                 </label>
                 <input
@@ -227,14 +237,14 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
                   value={formData.email}
                   onChange={handleChange}
                   required
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 focus:border-slate-400 bg-white text-slate-900 placeholder:text-slate-400 transition-all"
+                  className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 focus:border-slate-400 bg-white text-slate-900 placeholder:text-slate-400 transition-all text-sm"
                   placeholder="developer@example.com"
                 />
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1 sm:mb-2">
                 Skills
               </label>
               <input
@@ -242,7 +252,7 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
                 name="skills"
                 value={formData.skills}
                 onChange={handleChange}
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 focus:border-slate-400 bg-white text-slate-900 placeholder:text-slate-400 transition-all"
+                className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 focus:border-slate-400 bg-white text-slate-900 placeholder:text-slate-400 transition-all text-sm"
                 placeholder="Comma-separated (e.g., React, Node.js, MongoDB)"
               />
               <p className="text-slate-500 text-xs mt-1">
@@ -251,7 +261,7 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1 sm:mb-2">
                 Capacity Hours *
               </label>
               <input
@@ -262,7 +272,7 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
                 required
                 min="1"
                 step="0.5"
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 focus:border-slate-400 bg-white text-slate-900 placeholder:text-slate-400 transition-all"
+                className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 focus:border-slate-400 bg-white text-slate-900 placeholder:text-slate-400 transition-all text-sm"
                 placeholder="e.g., 40"
               />
               <p className="text-slate-500 text-xs mt-1">
@@ -270,19 +280,55 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
               </p>
             </div>
 
+            <div>
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1 sm:mb-2">
+                Experience (Years)
+              </label>
+              <input
+                type="number"
+                name="experience"
+                value={formData.experience}
+                onChange={handleChange}
+                min="0"
+                step="1"
+                className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 focus:border-slate-400 bg-white text-slate-900 placeholder:text-slate-400 transition-all text-sm"
+                placeholder="e.g., 5"
+              />
+              <p className="text-slate-500 text-xs mt-1">
+                Years of experience
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1 sm:mb-2">
+                Past Projects
+              </label>
+              <textarea
+                name="pastProjects"
+                value={formData.pastProjects}
+                onChange={handleChange}
+                rows="2"
+                className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 focus:border-slate-400 bg-white text-slate-900 placeholder:text-slate-400 transition-all resize-none text-sm"
+                placeholder="Describe past projects worked on..."
+              />
+              <p className="text-slate-500 text-xs mt-1">
+                List of past projects (optional)
+              </p>
+            </div>
+
             {/* Action Buttons */}
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-2 sm:gap-3 pt-2 flex-col-reverse sm:flex-row">
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 px-6 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-all font-medium"
+                className="flex-1 px-4 sm:px-6 py-2 sm:py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-all font-medium text-sm"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 px-6 py-2.5 bg-gradient-to-r from-teal-600 to-teal-500 text-white rounded-lg hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="flex-1 px-4 sm:px-6 py-2 sm:py-2.5 bg-gradient-to-r from-teal-600 to-teal-500 text-white rounded-lg hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
               >
                 {loading ? (
                   <>
@@ -303,4 +349,3 @@ export default function TeamMemberForm({ onClose, onSuccess, editMember = null }
     </div>
   );
 }
-
