@@ -38,6 +38,8 @@ class TeamMember(models.Model):
     capacityHours = models.PositiveIntegerField(default=40)
     assignedHours = models.PositiveIntegerField(default=0)
     status = models.CharField(max_length=20, default="available")  # available / high_load / overloaded
+    Experience = models.PositiveBigIntegerField( default=0)  # total months of experience   
+    Past_Projects = models.TextField(blank=True)
 
     def __str__(self):
         return self.name

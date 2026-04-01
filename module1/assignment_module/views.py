@@ -68,6 +68,8 @@ def add_team_member(request):
         capacityHours=capacity_hours,
         assignedHours=0,
         status="available",
+        Experience=data.get("experience", 0),
+        Past_Projects=data.get("pastProjects", ""),
     )
 
     token = uuid.uuid4().hex
@@ -217,6 +219,11 @@ def update_team_member(request, member_id):
     if "assignedHours" in data:
         member.assignedHours = data["assignedHours"]
 
+    if "experience" in data:
+        member.Experience = data["experience"]
+    if "pastProjects" in data:
+        member.Past_Projects = data["pastProjects"]
+
     # Recalculate workload status
     assigned = member.assignedHours
     capacity = member.capacityHours
@@ -247,27 +254,100 @@ def update_team_member(request, member_id):
         }
     }, status=200)
    
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from .models import TeamMember, ManagementUser
+
 @csrf_exempt
 def delete_team_member(request, member_id):
     if request.method != "DELETE":
         return JsonResponse({"error": "DELETE method required"}, status=400)
 
-    try:
-        member = TeamMember.objects.get(id=member_id)
-    except TeamMember.DoesNotExist:
-        return JsonResponse({"error": "Team member not found"}, status=404)
+    team_member = TeamMember.objects.filter(id=member_id).first()
+    management_user = ManagementUser.objects.filter(id=member_id).first()
 
-    if member.assignedHours > 0:
+    # If not found in both tables → fail
+    if not team_member and not management_user:
+        return JsonResponse({
+            "success": False,
+            "error": "User not found in any table"
+        }, status=404)
+
+    # Check assigned hours only if exists in TeamMember
+    if team_member and team_member.assignedHours > 0:
         return JsonResponse({
             "success": False,
             "error": "Cannot delete developer because tasks are still assigned."
         }, status=400)
 
-    member.delete()
+    # Delete wherever found
+    if team_member:
+        team_member.delete()
+
+    if management_user:
+        management_user.delete()
+
+    #if users role is product owner, delete from product owner table
+    if management_user.role == "PRODUCT_OWNER":
+        product_owner = ProductOwner.objects.filter(email=management_user.email).first()
+        if product_owner:
+            product_owner.delete()
 
     return JsonResponse({
         "success": True,
-        "message": "Team member deleted successfully"
+        "message": "User deleted successfully from available tables"
+    }, status=200)
+@csrf_exempt
+def update_management_user(request, user_id):
+    if request.method != "PUT":
+        return JsonResponse({"error": "PUT method required"}, status=400)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    # Check if user exists
+    try:
+        user = ManagementUser.objects.get(id=user_id)
+    except ManagementUser.DoesNotExist:
+        return JsonResponse({"error": "User not found"}, status=404)
+
+    # Update fields if provided
+    if "name" in data:
+        user.name = data["name"]
+
+    if "email" in data:
+        user.email = data["email"]
+
+    if "password" in data:
+        user.password = make_password(data["password"])
+
+    if "role" in data:
+        user.role = data["role"]
+
+    if "skills" in data:
+        user.skills = data["skills"]
+        
+    user.save()
+
+    #if user is product owner, also update in product owner table
+    if user.role == "PRODUCT_OWNER":
+        product_owner = ProductOwner.objects.filter(email=user.email).first()
+        if product_owner:
+            product_owner.name = user.name
+            product_owner.save()
+
+    return JsonResponse({
+        "success": True,
+        "message": "User updated successfully",
+        "updated": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role,
+            "skills": user.skills,
+        }
     }, status=200)
 
 @csrf_exempt
@@ -735,18 +815,20 @@ def get_product_owners(request):
 
     # Filter PRODUCT_OWNER for this workspace
     product_owners = ManagementUser.objects.filter(workspace=workspace, role="PRODUCT_OWNER")
-
     data = [
         {
             "id": po.id,
             "name": po.name,
             "email": po.email,
-            "role": po.role,
+            "role": po.role, 
         }
         for po in product_owners
     ]
 
     return JsonResponse({"success": True, "productOwners": data}, status=200)
+
+
+
 
     ####   assignment helper
 
@@ -1299,4 +1381,3 @@ def get_pending_assignments(request):
         })
 
     return JsonResponse({"success": True, "data": result}, status=200)
-
