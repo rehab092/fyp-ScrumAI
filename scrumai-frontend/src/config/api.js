@@ -5,6 +5,7 @@ const API_BASE_URL = 'http://localhost:8000/';
 
 // For direct backend calls (bypassing proxy), use this:
 const DIRECT_API_BASE_URL = 'http://localhost:8000/';
+const DELAY_ALERTS_BASE_URL = 'http://127.0.0.1:8000/';
 
 // Match the pattern of old APIs:
 // Old APIs: http://localhost:8000/userstories/...
@@ -80,6 +81,27 @@ export const LOGIN_ENDPOINTS = {
   // Dependency Endpoints
   dependencies: {
     getByProject: (projectId) => `${API_BASE_URL}api/dependencies/project/${projectId}/`,
+  },
+
+  // Delay Alerts Endpoints
+  delayAlerts: {
+    getProjects: `${DELAY_ALERTS_BASE_URL}api/delay-alerts/projects/`,
+    getProjectContext: (projectId, sprintId) =>
+      `${DELAY_ALERTS_BASE_URL}api/delay-alerts/project/${projectId}/context/${
+        sprintId ? `?sprintId=${encodeURIComponent(sprintId)}` : ""
+      }`,
+    runEngine: `${DELAY_ALERTS_BASE_URL}api/delay-alerts/engine/run/`,
+    upsertTaskProgress: `${DELAY_ALERTS_BASE_URL}api/delay-alerts/task-progress/upsert/`,
+    listAlerts: (projectId, active = true) => {
+      const params = new URLSearchParams();
+      if (projectId != null && projectId !== "") {
+        params.set("projectId", String(projectId));
+      }
+      params.set("active", String(Boolean(active)));
+      const query = params.toString();
+      return `${DELAY_ALERTS_BASE_URL}api/delay-alerts/alerts/${query ? `?${query}` : ""}`;
+    },
+    resolveAlert: (alertId) => `${DELAY_ALERTS_BASE_URL}api/delay-alerts/alerts/${alertId}/resolve/`,
   },
 
   // Team Members Endpoints (require Workspace-ID header)

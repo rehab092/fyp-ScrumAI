@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import { LOGIN_ENDPOINTS } from "../config/api";
+import DelayAlerts from "../components/scrum-master/DelayAlerts";
 
 export default function TeamMemberPortal() {
   const { user, logout } = useAuth();
@@ -202,6 +203,7 @@ export default function TeamMemberPortal() {
   const navigationItems = [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
     { id: "myTasks", label: "My Tasks", icon: "✅" },
+    { id: "delays", label: "Delay Alerts", icon: "⏰" },
     { id: "skills", label: "My Skills", icon: "🎯" },
     { id: "profile", label: "Profile", icon: "👤" },
   ];
@@ -219,6 +221,8 @@ export default function TeamMemberPortal() {
         return <DashboardContent memberData={memberData} />;
       case "myTasks":
         return <MyTasksContent memberData={memberData} />;
+      case "delays":
+        return <DelayAlerts />;
       case "skills":
         return (
           <SkillsContent 

@@ -55,6 +55,14 @@ export default function Login() {
       
       // Owner ID could be at data level or user level - try multiple fields
       const ownerId = data.owner_id || user?.owner_id || user?.workspace_id || user?.id;
+      const workspaceId =
+        data.workspace_id ||
+        data.workspaceId ||
+        data?.workspace?.id ||
+        user?.workspace_id ||
+        user?.workspaceId ||
+        user?.workspace?.id ||
+        ownerId;
       
       console.log("Extracted ownerId:", ownerId);
       
@@ -70,6 +78,10 @@ export default function Login() {
       if (ownerId) {
         localStorage.setItem('ownerId', String(ownerId));
         console.log("Saved ownerId to localStorage:", ownerId);
+      }
+      if (workspaceId) {
+        localStorage.setItem('workspaceId', String(workspaceId));
+        console.log("Saved workspaceId to localStorage:", workspaceId);
       }
       
       // Add owner_id to user object so AuthContext.login can access it
