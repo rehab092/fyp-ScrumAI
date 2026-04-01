@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "sprintmanager",
     'authsystem',
     "taskdependency",
+    "delayalerts",
 
 ]
 # ADD THIS - Allow custom headers including Workspace-ID
