@@ -477,3 +477,40 @@ class ReoptimizeSprintView(View):
         SprintItem.objects.bulk_create(sprint_items)
         
         return JsonResponse({'message': 'Sprint reoptimized'})
+
+class ListSprintsView(View):
+    def get(self, request):
+        workspace_id = request.GET.get('workspace_id')
+        if not workspace_id:
+            return JsonResponse({'error': 'workspace_id query parameter is required'}, status=400)
+        
+        sprints = Sprint.objects.filter(workspace_id=workspace_id).order_by('-start_date')
+        sprint_list = [
+            {
+                'id': s.id,
+                'name': s.name,
+                'goal': s.goal,
+                'start_date': s.start_date,
+                'end_date': s.end_date,
+                'is_active': s.is_active
+            }
+            for s in sprints
+        ]
+        return JsonResponse({'sprints': sprint_list})
+    
+@method_decorator(csrf_exempt, name='dispatch')
+class ListSprintsByProjectView(View):
+    def get(self, request, project_id):
+        sprints = Sprint.objects.filter(project_id=project_id).order_by('-start_date')
+        sprint_list = [
+            {
+                'id': s.id,
+                'name': s.name,
+                'goal': s.goal,
+                'start_date': s.start_date,
+                'end_date': s.end_date,
+                'is_active': s.is_active
+            }
+            for s in sprints
+        ]
+        return JsonResponse({'sprints': sprint_list})

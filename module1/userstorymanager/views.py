@@ -710,6 +710,24 @@ def get_projects_by_owner(request, owner_id):
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
 @csrf_exempt
+def get_projects_by_workspace(request, workspace_id):
+    """
+    GET endpoint to retrieve all projects for a specific workspace.
+    URL: /userstorymanager/projects/workspace/<workspace_id>/
+    """
+    if request.method == "GET":
+        try:
+            workspace = AdminWorkspace.objects.get(pk=workspace_id)
+        except AdminWorkspace.DoesNotExist:
+            return JsonResponse({"error": "Workspace not found"}, status=404)
+
+        projects = list(Project.objects.filter(workspace_id=workspace_id).values(
+            "id", "name", "description", "owner_id"
+        ))
+        return JsonResponse(projects, safe=False, status=200)
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+@csrf_exempt
 def get_all_projects(request):
     """
     GET endpoint to retrieve all projects.
