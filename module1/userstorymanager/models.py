@@ -1,5 +1,3 @@
-
-
 from django.db import models
 
 class ProductOwner(models.Model):
@@ -28,6 +26,7 @@ class Project(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True, null=True)
     owner = models.ForeignKey(ProductOwner, on_delete=models.CASCADE, related_name='projects')
+    workspace_id=models.IntegerField(null=True, blank=True)  # Store workspace ID for easier querying
 
     def __str__(self):
         return self.name
@@ -64,5 +63,3 @@ class Backlog(models.Model):
 
     def __str__(self):
         return f"{self.project_id} - {self.task_id}"
-
-

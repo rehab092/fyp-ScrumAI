@@ -13,6 +13,7 @@ class Sprint(models.Model):
     start_date = models.DateField()
     end_date = models.DateField()
     is_active = models.BooleanField(default=True)
+    project_id=models.IntegerField(null=True, blank=True)  # Link to a specific project if needed
 
     def __str__(self):
         return f"{self.name} ({self.workspace.workspaceName})"
