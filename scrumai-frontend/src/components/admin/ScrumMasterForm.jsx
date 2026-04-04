@@ -6,7 +6,6 @@ export default function ScrumMasterForm({ onClose, onSuccess, editMember = null 
   const [formData, setFormData] = useState({
     name: editMember?.name || "",
     email: editMember?.email || "",
-    skills: editMember?.skills ? editMember.skills.join(", ") : "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -17,7 +16,6 @@ export default function ScrumMasterForm({ onClose, onSuccess, editMember = null 
       setFormData({
         name: editMember.name || "",
         email: editMember.email || "",
-        skills: editMember.skills ? (Array.isArray(editMember.skills) ? editMember.skills.join(", ") : editMember.skills) : "",
       });
     }
   }, [editMember]);
@@ -44,25 +42,17 @@ export default function ScrumMasterForm({ onClose, onSuccess, editMember = null 
         throw new Error("Email is required");
       }
 
-      // Convert skills string to array
-      const skillsArray = formData.skills
-        .split(",")
-        .map((skill) => skill.trim())
-        .filter((skill) => skill.length > 0);
-
       // Prepare request data
       const requestData = editMember
         ? {
             // For update, only send fields that changed
             name: formData.name.trim(),
-            skills: skillsArray,
           }
         : {
             // For create, include email and role
             name: formData.name.trim(),
             email: formData.email.trim(),
             role: "SCRUM_MASTER", // Automatically set - backend expects uppercase
-            skills: skillsArray,
           };
 
       const workspaceId = localStorage.getItem('workspaceId');
@@ -108,7 +98,6 @@ export default function ScrumMasterForm({ onClose, onSuccess, editMember = null 
       setFormData({
         name: "",
         email: "",
-        skills: "",
       });
 
       if (onClose) {
@@ -192,22 +181,7 @@ export default function ScrumMasterForm({ onClose, onSuccess, editMember = null 
               </div>
             )}
 
-            <div>
-              <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1 sm:mb-2">
-                Skills
-              </label>
-              <input
-                type="text"
-                name="skills"
-                value={formData.skills}
-                onChange={handleChange}
-                className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary bg-white text-slate-900 placeholder:text-slate-400 transition-all text-sm"
-                placeholder="Comma-separated (e.g., Agile, Scrum, Leadership)"
-              />
-              <p className="text-slate-500 text-xs mt-1">
-                Separate multiple skills with commas. Password will be generated automatically and sent via email.
-              </p>
-            </div>
+
 
             {/* Action Buttons */}
             <div className="flex gap-2 sm:gap-3 pt-2 flex-col-reverse sm:flex-row">

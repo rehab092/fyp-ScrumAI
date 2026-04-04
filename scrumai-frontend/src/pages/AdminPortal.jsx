@@ -128,17 +128,12 @@ export default function AdminPortal() {
                   </div>
                   
                   <div className="py-2">
-                    <button className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2">
-                      <span>👤</span>
-                      Profile Settings
-                    </button>
-                    <button className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2">
+                    <button 
+                      onClick={() => setActiveTab("settings")}
+                      className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2"
+                    >
                       <span>⚙️</span>
                       Workspace Settings
-                    </button>
-                    <button className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2">
-                      <span>❓</span>
-                      Help & Support
                     </button>
                   </div>
                   

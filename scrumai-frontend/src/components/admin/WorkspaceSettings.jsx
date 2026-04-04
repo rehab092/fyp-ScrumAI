@@ -1,15 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { LOGIN_ENDPOINTS } from "../../config/api";
 
 export default function WorkspaceSettings({ workspaceInfo }) {
   const [formData, setFormData] = useState({
     workspaceName: "",
     companyName: "",
     adminName: "",
-    adminEmail: "",
-    defaultSprintLength: "2",
-    defaultWorkingHours: "40",
-    defaultCapacityHours: "40"
+    adminEmail: ""
   });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState("");
@@ -20,10 +18,7 @@ export default function WorkspaceSettings({ workspaceInfo }) {
         workspaceName: workspaceInfo.workspaceName || "",
         companyName: workspaceInfo.companyName || "",
         adminName: workspaceInfo.adminName || "",
-        adminEmail: workspaceInfo.adminEmail || "",
-        defaultSprintLength: "2",
-        defaultWorkingHours: "40",
-        defaultCapacityHours: "40"
+        adminEmail: workspaceInfo.adminEmail || ""
       });
     }
   }, [workspaceInfo]);
@@ -42,9 +37,33 @@ export default function WorkspaceSettings({ workspaceInfo }) {
     setSuccess("");
 
     try {
-      // TODO: Implement API call to update workspace settings
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-      
+      const workspaceId = localStorage.getItem('workspaceId');
+      if (!workspaceId) {
+        throw new Error("Workspace ID not found. Please log in again.");
+      }
+
+      const requestData = {
+        workspaceName: formData.workspaceName,
+        companyName: formData.companyName,
+        adminName: formData.adminName,
+        adminEmail: formData.adminEmail
+      };
+
+      const response = await fetch(LOGIN_ENDPOINTS.workspace.updateSettings, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "Workspace-ID": workspaceId,
+        },
+        body: JSON.stringify(requestData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.message || "Failed to update settings");
+      }
+
       // Update localStorage
       localStorage.setItem('workspaceName', formData.workspaceName);
       localStorage.setItem('companyName', formData.companyName);
@@ -55,6 +74,7 @@ export default function WorkspaceSettings({ workspaceInfo }) {
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
       console.error('Error updating settings:', err);
+      setSuccess(`Error: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -147,60 +167,6 @@ export default function WorkspaceSettings({ workspaceInfo }) {
                     required
                     className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary bg-white text-textPrimary transition-all"
                     placeholder="admin@example.com"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Scrum Configuration */}
-            <div>
-              <h2 className="text-xl font-bold text-textPrimary mb-4">Scrum Configuration</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                  <label className="block text-sm font-semibold text-textPrimary mb-2">
-                    Default Sprint Length (weeks)
-                  </label>
-                  <input
-                    type="number"
-                    name="defaultSprintLength"
-                    value={formData.defaultSprintLength}
-                    onChange={handleChange}
-                    min="1"
-                    max="4"
-                    className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary bg-white text-textPrimary transition-all"
-                    placeholder="2"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-textPrimary mb-2">
-                    Default Working Hours/Week
-                  </label>
-                  <input
-                    type="number"
-                    name="defaultWorkingHours"
-                    value={formData.defaultWorkingHours}
-                    onChange={handleChange}
-                    min="1"
-                    max="168"
-                    className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary bg-white text-textPrimary transition-all"
-                    placeholder="40"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-textPrimary mb-2">
-                    Default Capacity Hours
-                  </label>
-                  <input
-                    type="number"
-                    name="defaultCapacityHours"
-                    value={formData.defaultCapacityHours}
-                    onChange={handleChange}
-                    min="1"
-                    max="168"
-                    className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary bg-white text-textPrimary transition-all"
-                    placeholder="40"
                   />
                 </div>
               </div>

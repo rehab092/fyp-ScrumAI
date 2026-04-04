@@ -51,6 +51,7 @@ const clearAllSessionData = () => {
   localStorage.removeItem('companyName');
   localStorage.removeItem('adminName');
   localStorage.removeItem('adminEmail');
+  localStorage.removeItem('ownerId');  // Add missing ownerId
   
   // Clear sessionStorage as well
   sessionStorage.clear();

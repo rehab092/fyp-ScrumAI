@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
-import Dashboard from "../components/portal/Dashboard";
+import ProductOwnerDashboard from "../components/product-owner/ProductOwnerDashboard";
+import AddTaskToSprint from "../components/product-owner/AddTaskToSprint";
 import BacklogManager from "../components/portal/BacklogManager";
 import Reports from "../components/portal/Reports";
-import Settings from "../components/portal/Settings";
 
 export default function ProductOwnerPortal() {
   const { user, logout } = useAuth();
@@ -14,24 +14,27 @@ export default function ProductOwnerPortal() {
   const workspaceName = localStorage.getItem("workspaceName") || "My Workspace";
 
   const navigationItems = [
-    { id: "dashboard", label: "Dashboard", icon: "📊" },
-    { id: "backlog", label: "Backlog", icon: "📋" },
-    { id: "reports", label: "Reports", icon: "📈" },
-    { id: "settings", label: "Settings", icon: "⚙️" }
+    { id: "dashboard", label: "Dashboard", icon: "📊", description: "Projects & stories" },
+    { id: "backlog", label: "Backlog", icon: "📋", description: "Project backlog" },
+    { id: "addtask", label: "Add Task to Sprint", icon: "➕", description: "Assign stories to sprint" },
+    
+    { id: "reports", label: "Reports", icon: "📈", description: "Reports & metrics" }
   ];
+
+  const [storyPoints, setStoryPoints] = useState({});
 
   const renderContent = () => {
     switch (activeTab) {
       case "dashboard":
-        return <Dashboard />;
+        return <ProductOwnerDashboard onNavigateToBacklog={() => setActiveTab("backlog")} />;
+      case "addtask":
+        return <AddTaskToSprint />;
       case "backlog":
         return <BacklogManager />;
       case "reports":
         return <Reports />;
-      case "settings":
-        return <Settings />;
       default:
-        return <Dashboard />;
+        return <ProductOwnerDashboard onNavigateToBacklog={() => setActiveTab("backlog")} />;
     }
   };
 
@@ -66,18 +69,6 @@ export default function ProductOwnerPortal() {
 
           {/* Right side */}
           <div className="flex items-center gap-4">
-            {/* Quick Stats */}
-            <div className="hidden lg:flex items-center gap-4 text-sm">
-              <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
-                <div className="w-2 h-2 bg-success rounded-full animate-pulse"></div>
-                <span className="text-white font-medium">Sprint Active</span>
-              </div>
-              <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
-                <span className="text-white font-semibold">87%</span>
-                <span className="text-white/80">Progress</span>
-              </div>
-            </div>
-
             <div className="hidden md:flex items-center gap-2 text-sm text-white/80">
               <span>Welcome back,</span>
               <span className="text-white font-medium">{user?.name || "Product Owner"}</span>
@@ -112,18 +103,7 @@ export default function ProductOwnerPortal() {
                   </div>
                   
                   <div className="py-2">
-                    <button className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2">
-                      <span>👤</span>
-                      Profile Settings
-                    </button>
-                    <button className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2">
-                      <span>📊</span>
-                      Analytics
-                    </button>
-                    <button className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2">
-                      <span>❓</span>
-                      Help & Support
-                    </button>
+                    {/* Removed Profile Settings, Analytics, Help & Support - not implemented */}
                   </div>
                   
                   <div className="border-t border-border pt-2">
@@ -192,22 +172,42 @@ export default function ProductOwnerPortal() {
         </motion.aside>
 
         {/* Desktop Sidebar */}
-        <aside className="hidden lg:block w-72 bg-white/98 backdrop-blur-sm border-r border-border shadow-xl fixed left-0 h-full overflow-y-auto">
-          <div className="p-6">
+        <aside className="hidden lg:block w-64 bg-white/98 backdrop-blur-sm border-r border-border shadow-xl fixed left-0 h-full overflow-y-auto">
+          <div className="p-4">
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-9 h-9 bg-gradient-to-r from-primary to-primaryLight rounded-lg flex items-center justify-center text-sm">
+                  <span className="text-white font-bold">PO</span>
+                </div>
+                <div>
+                  <h2 className="font-bold text-sm text-textPrimary">Product Owner</h2>
+                  <p className="text-xs text-textSecondary truncate">{workspaceName}</p>
+                </div>
+              </div>
+            </div>
             
-            <nav className="space-y-2">
+            <nav className="space-y-1">
               {navigationItems.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-300 ${
+                  className={`w-full flex flex-col items-start gap-0.5 px-3 py-3 rounded-lg transition-all duration-300 ${
                     activeTab === item.id
-                      ? "bg-gradient-to-r from-primaryDark to-primary text-white shadow-lg transform scale-105 ring-2 ring-primary/20"
+                      ? "bg-gradient-to-r from-primaryDark to-primary text-white shadow-lg ring-1 ring-primary/30"
                       : "text-textSecondary hover:bg-surface hover:text-textPrimary"
                   }`}
                 >
-                  <span className="text-xl">{item.icon}</span>
-                  <span className="font-semibold">{item.label}</span>
+                  <div className="flex items-center gap-2 w-full">
+                    <span className="text-lg">{item.icon}</span>
+                    <span className="font-semibold text-xs">{item.label}</span>
+                  </div>
+                  <p className={`text-xs px-8 leading-tight ${
+                    activeTab === item.id
+                      ? "text-white/70"
+                      : "text-textSecondary"
+                  }`}>
+                    {item.description}
+                  </p>
                 </button>
               ))}
             </nav>
@@ -215,7 +215,7 @@ export default function ProductOwnerPortal() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 lg:ml-72 overflow-y-auto p-6">
+        <main className="flex-1 lg:ml-64 overflow-y-auto p-6">
           <motion.div
             key={activeTab}
             initial={{ opacity: 0, x: 20 }}

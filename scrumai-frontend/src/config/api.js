@@ -36,12 +36,15 @@ export const LOGIN_ENDPOINTS = {
   // User Stories / Backlog Endpoints
   userStories: {
     getAll: `${API_BASE_URL}userstories/tasks/`, // Get all tasks with user stories
-    create: `${API_BASE_URL}userstories`,
+    getByOwner: (ownerId) => `${API_BASE_URL}userstories/userstories/owner/${ownerId}/`, // Get user stories by owner
+    getAllStories: `${API_BASE_URL}userstories/stories/`, // Get all user stories
+    create: `${API_BASE_URL}userstories/create_story/`, // Create user story with LLM decomposition (JSON POST)
     createBulk: `${API_BASE_URL}userstories/bulk`,
-    upload: `${API_BASE_URL}userstories/create_backlog/`, // Upload with FormData
+    upload: `${API_BASE_URL}userstories/create_backlog/`, // Upload with FormData (multi-line)
     getById: (id) => `${API_BASE_URL}userstories/${id}`,
-    update: (id) => `${API_BASE_URL}userstories/${id}`,
-    delete: (id) => `${API_BASE_URL}userstories/story/${id}/delete/`,
+    update: (id) => `${API_BASE_URL}userstories/story/${id}/update/`, // Update user story
+    delete: (id) => `${API_BASE_URL}userstories/story/${id}/delete/`, // Delete user story
+    userStories: `${API_BASE_URL}userstories/`, // Base user stories endpoint
 
   },
 
@@ -76,6 +79,13 @@ export const LOGIN_ENDPOINTS = {
     getByUserStory: (userStoryId) => `${API_BASE_URL}userstories/tasks/${userStoryId}/`, // Get tasks for a user story
     update: (taskId) => `${API_BASE_URL}userstories/task/${taskId}/update/`, // Update task
     delete: (taskId) => `${API_BASE_URL}userstories/task/${taskId}/delete/`, // Delete task
+  },
+
+  // Sprint Task Management Endpoints (Product Owner → Scrum Master)
+  sprintTasks: {
+    addTaskToSprint: `${API_BASE_URL}userstories/sprint/add-task/`, // Add task to sprint (POST)
+    getSprintTasks: (sprintId) => `${API_BASE_URL}userstories/sprint/${sprintId}/tasks/`, // Get tasks in sprint (GET)
+    removeTaskFromSprint: (sprintItemId) => `${API_BASE_URL}userstories/sprint/task/${sprintItemId}/remove/`, // Remove task from sprint (DELETE)
   },
 
   // Dependency Endpoints
@@ -116,8 +126,15 @@ export const LOGIN_ENDPOINTS = {
   // Management Roles Endpoints (require Workspace-ID header)
   management: {
     addManagementUser: `${MODULE2_BASE_URL}roles/add-management-user/`, // Add Scrum Master or Product Owner (POST)
+    updateManagementUser: (id) => `${MODULE2_BASE_URL}roles/update-management-user/${id}/`, // Update Scrum Master or Product Owner (PUT)
     getScrumMasters: `${MODULE2_BASE_URL}roles/get-scrum-masters/`, // Get all Scrum Masters (GET)
     getProductOwners: `${MODULE2_BASE_URL}roles/get-product-owners/`, // Get all Product Owners (GET)
+  },
+
+  // Workspace Settings Endpoints
+  workspace: {
+    updateSettings: `${MODULE2_BASE_URL}workspace/update-settings/`, // Update workspace settings including Scrum configuration (PUT)
+    getSettings: `${MODULE2_BASE_URL}workspace/settings/`, // Get workspace settings (GET)
   },
 };
 

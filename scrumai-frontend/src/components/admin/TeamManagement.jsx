@@ -354,12 +354,18 @@ export default function TeamManagement({ workspaceInfo }) {
                       </div>
                     </td>
                     <td className="px-3 py-3 text-textSecondary text-sm">
-                      {member.assignedHours || 0}/{member.capacityHours || 0}h
+                      {member.role === "PRODUCT_OWNER" || member.role === "SCRUM_MASTER" ? 
+                        "-" : 
+                        `${member.assignedHours || 0}/${member.capacityHours || 0}h`
+                      }
                     </td>
                     <td className="px-3 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(member.status)}`}>
-                        {member.status || "active"}
-                      </span>
+                      {member.role === "PRODUCT_OWNER" || member.role === "SCRUM_MASTER" ? 
+                        <span className="text-textMuted text-sm">-</span> :
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(member.status)}`}>
+                          {member.status || "active"}
+                        </span>
+                      }
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center justify-center gap-1">
