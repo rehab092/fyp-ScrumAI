@@ -20,6 +20,26 @@ def login_user(request):
     if not email or not password:
         return JsonResponse({"error": "Email and password required"}, status=400)
 
+    from userstorymanager.models import ProductOwner
+    
+    # First, try to find ProductOwner with this email
+    product_owner = ProductOwner.objects.filter(email=email).first()
+    if product_owner and product_owner.password == password:  # TEMPORARY plain text
+        return JsonResponse({
+            "message": "Login successful",
+            "success": True,
+            "workspaceId": product_owner.workspace_id if product_owner.workspace else None,
+            "owner_id": product_owner.id,
+            "user": {
+                "id": product_owner.id,
+                "email": email,
+                "owner_id": product_owner.id,
+                "workspace_id": product_owner.workspace_id if product_owner.workspace else None,
+                "role": "PRODUCT_OWNER"
+            }
+        }, status=200)
+
+    # If not found, try admin login
     try:
         admin = AdminWorkspace.objects.get(adminEmail=email)
     except AdminWorkspace.DoesNotExist:
@@ -29,11 +49,34 @@ def login_user(request):
     if admin.password != password:
         return JsonResponse({"error": "Incorrect password"}, status=401)
 
+    # Find the ProductOwner associated with this workspace, or create one if it doesn't exist
+    po = ProductOwner.objects.filter(workspace=admin).first()
+    if not po:
+        # Auto-create ProductOwner for this admin
+        po = ProductOwner.objects.create(
+            name=admin.adminName,
+            email=admin.adminEmail,
+            password=password,
+            company_name=admin.companyName,
+            workspace=admin
+        )
+    
+    owner_id = po.id
+
     return JsonResponse({
         "message": "Login successful",
+        "success": True,
         "workspaceId": admin.id,
         "workspaceName": admin.workspaceName,
         "companyName": admin.companyName,
+        "owner_id": owner_id,
+        "user": {
+            "id": admin.id,
+            "email": email,
+            "owner_id": owner_id,
+            "workspace_id": admin.id,
+            "role": "PRODUCT_OWNER"
+        }
     }, status=200)
 
 @csrf_exempt

@@ -9,6 +9,11 @@ class AdminWorkspace(models.Model):
     password = models.CharField(max_length=255)  # later you should hash it
     workspaceName = models.CharField(max_length=100)
     companyName = models.CharField(max_length=100)
+    
+    # Scrum Configuration
+    defaultSprintLength = models.PositiveIntegerField(default=2)  # weeks
+    defaultWorkingHoursPerWeek = models.PositiveIntegerField(default=40)  # hours
+    defaultCapacityHours = models.PositiveIntegerField(default=40)  # hours
 
     createdAt = models.DateTimeField(auto_now_add=True)
     updatedAt = models.DateTimeField(auto_now=True)

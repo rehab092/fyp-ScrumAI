@@ -27,6 +27,7 @@ class Project(models.Model):
     description = models.TextField(blank=True, null=True)
     owner = models.ForeignKey(ProductOwner, on_delete=models.CASCADE, related_name='projects')
     workspace_id=models.IntegerField(null=True, blank=True)  # Store workspace ID for easier querying
+    start_date = models.DateField(null=True, blank=True)  # Project start date
 
     def __str__(self):
         return self.name
@@ -37,6 +38,7 @@ class UserStory(models.Model):
     goal = models.TextField()
     benefit = models.TextField()
     priority = models.CharField(max_length=50)
+    story_points = models.IntegerField(null=True, blank=True)
     project_name = models.CharField(max_length=100)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='user_stories', null=True, blank=True)
     
@@ -63,3 +65,41 @@ class Backlog(models.Model):
 
     def __str__(self):
         return f"{self.project_id} - {self.task_id}"
+
+
+class SprintAssignment(models.Model):
+    """
+    Stores sprint assignments made by the Product Owner.
+    Used to track which user stories are assigned to which sprints,
+    along with their priority for later scrum master sprint planning.
+    """
+    user_story = models.ForeignKey(
+        UserStory,
+        on_delete=models.CASCADE,
+        related_name='sprint_assignments'
+    )
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='sprint_assignments'
+    )
+    product_owner = models.ForeignKey(
+        ProductOwner,
+        on_delete=models.CASCADE,
+        related_name='sprint_assignments'
+    )
+    sprint_number = models.IntegerField()  # Sprint 1, 2, 3, 4, 5, etc.
+    priority = models.CharField(
+        max_length=50,
+        choices=[('High', 'High'), ('Medium', 'Medium'), ('Low', 'Low')]
+    )
+    story_points = models.IntegerField(null=True, blank=True)
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['sprint_number', '-priority']
+        unique_together = ('user_story', 'sprint_number', 'project')
+
+    def __str__(self):
+        return f"Sprint {self.sprint_number} - {self.user_story.role} ({self.priority})"
