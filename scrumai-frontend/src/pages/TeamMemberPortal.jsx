@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
-import { LOGIN_ENDPOINTS } from "../config/api";
+import { LOGIN_ENDPOINTS, apiRequest } from "../config/api";
 import DelayAlerts from "../components/scrum-master/DelayAlerts";
+import TeamMemberDashboard from "../components/member-portal/TeamMemberDashboard";
 
 export default function TeamMemberPortal() {
   const { user, logout } = useAuth();
@@ -202,7 +203,8 @@ export default function TeamMemberPortal() {
 
   const navigationItems = [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
-    { id: "myTasks", label: "My Tasks", icon: "✅" },
+    { id: "assignedTasks", label: "Assigned Tasks", icon: "✅" },
+    { id: "taskTable", label: "Task Table", icon: "📋" },
     { id: "delays", label: "Delay Alerts", icon: "⏰" },
     { id: "skills", label: "My Skills", icon: "🎯" },
     { id: "profile", label: "Profile", icon: "👤" },
@@ -218,9 +220,11 @@ export default function TeamMemberPortal() {
   const renderContent = () => {
     switch (activeTab) {
       case "dashboard":
-        return <DashboardContent memberData={memberData} />;
-      case "myTasks":
+        return <TeamMemberDashboard />;
+      case "assignedTasks":
         return <MyTasksContent memberData={memberData} />;
+      case "taskTable":
+        return <TaskTableContent memberData={memberData} />;
       case "delays":
         return <DelayAlerts />;
       case "skills":
@@ -238,7 +242,7 @@ export default function TeamMemberPortal() {
           />
         );
       default:
-        return <DashboardContent memberData={memberData} />;
+        return <TeamMemberDashboard />;
     }
   };
 
@@ -278,17 +282,6 @@ export default function TeamMemberPortal() {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="hidden lg:flex items-center gap-4 text-sm">
-              <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
-                <div className="w-2 h-2 bg-success rounded-full animate-pulse"></div>
-                <span className="text-white font-medium">Active</span>
-              </div>
-              <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
-                <span className="text-white font-semibold">{memberData?.skills?.length || 0}</span>
-                <span className="text-white/80">Skills</span>
-              </div>
-            </div>
-
             <div className="hidden md:flex items-center gap-2 text-sm text-white/80">
               <span>Welcome,</span>
               <span className="text-white font-medium">{memberData?.name || user?.name || "Team Member"}</span>
@@ -369,20 +362,6 @@ export default function TeamMemberPortal() {
 
         <aside className="hidden lg:block w-64 bg-white border-r border-border shadow-lg min-h-screen sticky top-[73px]">
           <div className="p-6 space-y-6">
-            <div className="bg-gradient-to-br from-primary/10 to-secondary/10 rounded-2xl p-4 border border-primary/20">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 bg-gradient-to-r from-primary to-secondary rounded-xl flex items-center justify-center text-white font-bold shadow-lg">{initials}</div>
-                <div>
-                  <p className="font-semibold text-textPrimary">{memberData?.name}</p>
-                  <p className="text-xs text-textSecondary">Developer</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-textSecondary">
-                <span className="w-2 h-2 bg-success rounded-full"></span>
-                <span>Online</span>
-              </div>
-            </div>
-
             <nav className="space-y-2">
               {navigationItems.map((item) => (
                 <button
@@ -460,125 +439,436 @@ export default function TeamMemberPortal() {
   );
 }
 
-function DashboardContent({ memberData }) {
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "overloaded": return "text-error";
-      case "high_load": return "text-warning";
-      default: return "text-success";
+
+function MyTasksContent({ memberData }) {
+  const { user } = useAuth();
+  const [tasks, setTasks] = useState([]);
+  const [loadingTasks, setLoadingTasks] = useState(true);
+  const [actionLoadingId, setActionLoadingId] = useState(null);
+  const [rejectingTask, setRejectingTask] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [loadError, setLoadError] = useState("");
+
+  const developerEmail = memberData?.email || user?.email || "";
+
+  useEffect(() => {
+    const fetchMyTasks = async () => {
+      try {
+        setLoadingTasks(true);
+        setLoadError("");
+        const response = await apiRequest(`${LOGIN_ENDPOINTS.taskAllocation.getMyTickets}`, {
+          method: "GET",
+          headers: {
+            "X-Developer-Email": developerEmail,
+          },
+        });
+
+        setTasks(Array.isArray(response.tickets) ? response.tickets : []);
+      } catch (err) {
+        console.error("Error loading developer tasks:", err);
+        setTasks([]);
+        setLoadError(err.message || "Failed to load your tasks");
+      } finally {
+        setLoadingTasks(false);
+      }
+    };
+
+    if (developerEmail) {
+      fetchMyTasks();
+    }
+  }, [developerEmail]);
+
+  const refreshTasks = async () => {
+    if (!developerEmail) return;
+    try {
+      const response = await apiRequest(`${LOGIN_ENDPOINTS.taskAllocation.getMyTickets}`, {
+        method: "GET",
+        headers: {
+          "X-Developer-Email": developerEmail,
+        },
+      });
+      setTasks(Array.isArray(response.tickets) ? response.tickets : []);
+    } catch (err) {
+      console.error("Error refreshing developer tasks:", err);
     }
   };
 
-  const getStatusLabel = (status) => {
-    switch (status) {
-      case "overloaded": return "Overloaded";
-      case "high_load": return "High Load";
-      default: return "Available";
+  const respondToTask = async (task, response) => {
+    try {
+      setActionLoadingId(task.approval_workflow_id);
+      const payload = {
+        approval_workflow_id: task.approval_workflow_id,
+        response,
+      };
+
+      if (response === "REJECT") {
+        payload.reason = rejectReason || "Task cannot be accepted right now";
+      }
+
+      const result = await apiRequest(LOGIN_ENDPOINTS.taskAllocation.developerResponse, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      if (result.success) {
+        setRejectingTask(null);
+        setRejectReason("");
+        await refreshTasks();
+      }
+    } catch (err) {
+      console.error("Error responding to task:", err);
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case "overloaded": return "🔴";
-      case "high_load": return "🟡";
-      default: return "🟢";
+  const getStatusBadge = (task) => {
+    const workflowStatus = task.workflow_status || task.status;
+    if (workflowStatus === "DONE") return "bg-success/10 text-success border-success/30";
+    if (workflowStatus === "IN_PROGRESS" || workflowStatus === "ACTIVE") return "bg-primary/10 text-primary border-primary/30";
+    if (workflowStatus === "BLOCKED") return "bg-error/10 text-error border-error/30";
+    if (workflowStatus === "DELAYED") return "bg-warning/10 text-warning border-warning/30";
+    if (workflowStatus === "DEV_PENDING" || workflowStatus === "SM_APPROVED") return "bg-warning/10 text-warning border-warning/30";
+    if (workflowStatus === "DEV_REJECTED") return "bg-error/10 text-error border-error/30";
+    return "bg-surface text-textSecondary border-border";
+  };
+
+  const getStatusLabel = (task) => {
+    const workflowStatus = task.workflow_status || task.status;
+    if (workflowStatus === "ACTIVE") return "In Progress";
+    if (workflowStatus === "IN_PROGRESS") return "In Progress";
+    if (workflowStatus === "DEV_PENDING" || workflowStatus === "SM_APPROVED") return "To Do";
+    if (workflowStatus === "DEV_REJECTED") return "Blocked";
+    if (workflowStatus === "BLOCKED") return "Blocked";
+    if (workflowStatus === "DONE") return "Done";
+    if (workflowStatus === "DELAYED") return "Delayed";
+    return "To Do";
+  };
+
+  const formatDate = (value) => {
+    if (!value) return "-";
+    try {
+      return new Date(value).toLocaleDateString();
+    } catch {
+      return value;
     }
   };
+
+  const groupedTasks = tasks.reduce(
+    (acc, task) => {
+      const workflowStatus = task.workflow_status || task.status;
+      if (workflowStatus === "ACTIVE") acc.inProgress.push(task);
+      else if (workflowStatus === "DEV_PENDING" || workflowStatus === "SM_APPROVED") acc.pending.push(task);
+      else if (workflowStatus === "DEV_REJECTED") acc.rejected.push(task);
+      else acc.other.push(task);
+      return acc;
+    },
+    { pending: [], inProgress: [], rejected: [], other: [] }
+  );
 
   return (
     <div className="space-y-6">
-      <div className="bg-gradient-to-r from-primary via-primaryDark to-primary rounded-2xl p-8 text-white shadow-xl">
-        <h1 className="text-3xl font-bold mb-2">Welcome back, {memberData?.name?.split(" ")[0] || "Developer"}! 👋</h1>
-        <p className="text-white/80 text-lg">Ready to crush some tasks today? Here is your overview.</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white rounded-2xl p-6 border border-border shadow-sm hover:shadow-md transition-all">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-500/20 to-blue-500/10 rounded-xl flex items-center justify-center"><span className="text-2xl">🎯</span></div>
-            <span className="text-3xl font-bold text-primary">{memberData?.skills?.length || 0}</span>
-          </div>
-          <h3 className="text-textSecondary text-sm font-medium">Total Skills</h3>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white rounded-2xl p-6 border border-border shadow-sm hover:shadow-md transition-all">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-green-500/20 to-green-500/10 rounded-xl flex items-center justify-center"><span className="text-2xl">⏱️</span></div>
-            <span className="text-3xl font-bold text-success">{memberData?.capacityHours || 40}h</span>
-          </div>
-          <h3 className="text-textSecondary text-sm font-medium">Weekly Capacity</h3>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-white rounded-2xl p-6 border border-border shadow-sm hover:shadow-md transition-all">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-purple-500/20 to-purple-500/10 rounded-xl flex items-center justify-center"><span className="text-2xl">📊</span></div>
-            <span className="text-3xl font-bold text-purple-600">{memberData?.assignedHours || 0}h</span>
-          </div>
-          <h3 className="text-textSecondary text-sm font-medium">Assigned Hours</h3>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="bg-white rounded-2xl p-6 border border-border shadow-sm hover:shadow-md transition-all">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-orange-500/20 to-orange-500/10 rounded-xl flex items-center justify-center"><span className="text-2xl">{getStatusIcon(memberData?.status)}</span></div>
-            <span className={`text-2xl font-bold ${getStatusColor(memberData?.status)}`}>{getStatusLabel(memberData?.status)}</span>
-          </div>
-          <h3 className="text-textSecondary text-sm font-medium">Workload Status</h3>
-        </motion.div>
-      </div>
-
-      {/* Workload Progress Bar */}
-      <div className="bg-white rounded-2xl p-6 border border-border shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-textPrimary">Workload Overview</h2>
-          <span className="text-sm text-textSecondary">
-            {memberData?.assignedHours || 0}h / {memberData?.capacityHours || 40}h used
-          </span>
-        </div>
-        <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
-          <div 
-            className={`h-4 rounded-full transition-all ${
-              memberData?.status === "overloaded" ? "bg-error" : 
-              memberData?.status === "high_load" ? "bg-warning" : "bg-success"
-            }`}
-            style={{ width: `${Math.min(((memberData?.assignedHours || 0) / (memberData?.capacityHours || 40)) * 100, 100)}%` }}
-          ></div>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-textSecondary">Remaining: <span className="font-semibold text-textPrimary">{memberData?.remainingHours || (memberData?.capacityHours || 40) - (memberData?.assignedHours || 0)}h</span></span>
-          <span className={`font-medium ${getStatusColor(memberData?.status)}`}>{getStatusLabel(memberData?.status)}</span>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-textPrimary">Assigned Tasks</h1>
+          <p className="text-sm text-textSecondary mt-1">Tickets waiting for your response or already in progress.</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl p-6 border border-border shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-textPrimary">Your Skills</h2>
-          <span className="text-sm text-textSecondary">Quick preview</span>
+      {loadingTasks ? (
+        <div className="bg-white rounded-2xl p-8 border border-border shadow-sm text-center text-textSecondary">
+          Loading your assignments...
         </div>
-        <div className="flex flex-wrap gap-3">
-          {memberData?.skills?.length > 0 ? (
-            memberData.skills.map((skill, index) => (
-              <span key={index} className="px-4 py-2 bg-gradient-to-r from-primary/10 to-secondary/10 text-primary rounded-full text-sm font-medium border border-primary/20">{skill}</span>
-            ))
-          ) : (
-            <p className="text-textSecondary">No skills added yet. Go to Skills tab to add your skills!</p>
-          )}
+      ) : loadError ? (
+        <div className="bg-white rounded-2xl p-8 border border-error/20 shadow-sm text-center">
+          <div className="w-20 h-20 bg-error/10 rounded-full flex items-center justify-center mx-auto mb-4"><span className="text-4xl">⚠️</span></div>
+          <h3 className="text-xl font-semibold text-textPrimary mb-2">Unable to load tasks</h3>
+          <p className="text-textSecondary max-w-md mx-auto mb-4">{loadError}</p>
+          <button
+            onClick={refreshTasks}
+            className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium"
+          >
+            Try again
+          </button>
         </div>
-      </div>
+      ) : tasks.length === 0 ? (
+        <div className="bg-white rounded-2xl p-8 border border-border shadow-sm text-center">
+          <div className="w-20 h-20 bg-gradient-to-br from-primary/10 to-secondary/10 rounded-full flex items-center justify-center mx-auto mb-4"><span className="text-4xl">📋</span></div>
+          <h3 className="text-xl font-semibold text-textPrimary mb-2">No Assigned Tickets Yet</h3>
+          <p className="text-textSecondary max-w-md mx-auto">Tickets will appear here once your Scrum Master assigns work to you. Current inbox email: {developerEmail || "not available"}.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-2xl p-4 border border-border shadow-sm">
+              <p className="text-xs text-textMuted mb-1">Pending Review</p>
+              <p className="text-2xl font-bold text-textPrimary">{groupedTasks.pending.length}</p>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-border shadow-sm">
+              <p className="text-xs text-textMuted mb-1">In Progress</p>
+              <p className="text-2xl font-bold text-success">{groupedTasks.inProgress.length}</p>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-border shadow-sm">
+              <p className="text-xs text-textMuted mb-1">Rejected</p>
+              <p className="text-2xl font-bold text-error">{groupedTasks.rejected.length}</p>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-border shadow-sm">
+              <p className="text-xs text-textMuted mb-1">Total</p>
+              <p className="text-2xl font-bold text-primary">{tasks.length}</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {tasks.map((task) => {
+              const canRespond = task.can_respond && (task.workflow_status === "SM_APPROVED" || task.workflow_status === "DEV_PENDING");
+              const isAccepted = task.workflow_status === "ACTIVE";
+              const dueDate = task.due_date;
+              const sprintRef = task.sprint_reference;
+
+              return (
+                <div key={task.approval_workflow_id || task.ticket_id} className="bg-white rounded-2xl p-6 border border-border shadow-sm">
+                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span className="px-2 py-1 rounded-full bg-surface text-textSecondary border border-border text-xs font-semibold">
+                          {task.ticket_id}
+                        </span>
+                        <h3 className="text-lg font-semibold text-textPrimary">{task.task_name || task.title}</h3>
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold border ${getStatusBadge(task)}`}>
+                          {getStatusLabel(task)}
+                        </span>
+                      </div>
+                      <p className="text-sm text-textSecondary mb-3">{task.description || "No description provided."}</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 text-xs text-textSecondary mb-3">
+                        <span className="px-2 py-2 rounded-lg bg-surface border border-border">Assigned by: {task.assigned_by || "Scrum Master"}</span>
+                        <span className="px-2 py-2 rounded-lg bg-surface border border-border">Due date: {formatDate(dueDate)}</span>
+                        <span className="px-2 py-2 rounded-lg bg-surface border border-border">Sprint: {sprintRef?.name || sprintRef?.id || "-"}</span>
+                        <span className="px-2 py-2 rounded-lg bg-surface border border-border">Estimate: {task.estimated_hours || 0}h</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs text-textSecondary">
+                        <span className="px-2 py-1 rounded-lg bg-surface border border-border">Priority: {task.priority || "MEDIUM"}</span>
+                        {task.is_delayed && (
+                          <span className="px-2 py-1 rounded-lg bg-warning/10 text-warning border border-warning/30">Delayed</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="min-w-[220px] rounded-xl border border-border bg-surface/40 p-4">
+                      <p className="text-xs text-textMuted mb-1">Your Response</p>
+                      <p className="text-sm font-semibold text-textPrimary mb-3">
+                        {isAccepted ? "Accepted and in progress" : canRespond ? "Waiting for your decision" : "No action required"}
+                      </p>
+
+                      {canRespond && (
+                        <div className="flex flex-col gap-2">
+                          <button
+                            onClick={() => respondToTask(task, "ACCEPT")}
+                            disabled={actionLoadingId === task.approval_workflow_id}
+                            className="px-3 py-2 rounded-lg bg-success text-white text-sm font-medium disabled:opacity-50"
+                          >
+                            {actionLoadingId === task.approval_workflow_id ? "Updating..." : "Accept"}
+                          </button>
+                          <button
+                            onClick={() => setRejectingTask(task)}
+                            disabled={actionLoadingId === task.approval_workflow_id}
+                            className="px-3 py-2 rounded-lg border border-error/30 bg-white text-error text-sm font-medium disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {rejectingTask?.approval_workflow_id === task.approval_workflow_id && (
+                    <div className="mt-4 border-t border-border pt-4">
+                      <label className="block text-xs font-semibold text-textMuted mb-2">Reason for rejection</label>
+                      <textarea
+                        rows={3}
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-error/30"
+                        placeholder="Tell your Scrum Master why you cannot take this task"
+                      />
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => respondToTask(task, "REJECT")}
+                          disabled={actionLoadingId === task.approval_workflow_id}
+                          className="px-4 py-2 rounded-lg bg-error text-white text-sm font-medium disabled:opacity-50"
+                        >
+                          {actionLoadingId === task.approval_workflow_id ? "Sending..." : "Send Rejection"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setRejectingTask(null);
+                            setRejectReason("");
+                          }}
+                          className="px-4 py-2 rounded-lg border border-border bg-white text-sm font-medium text-textPrimary"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function MyTasksContent({ memberData }) {
+function TaskTableContent({ memberData }) {
+  const { user } = useAuth();
+  const [tasks, setTasks] = useState([]);
+  const [loadingTasks, setLoadingTasks] = useState(true);
+  const [savingTaskId, setSavingTaskId] = useState(null);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const developerEmail = memberData?.email || user?.email || "";
+
+  const fetchTasks = async () => {
+    try {
+      setLoadingTasks(true);
+      setErrorMessage("");
+      const response = await apiRequest(LOGIN_ENDPOINTS.taskAllocation.getMyTickets, {
+        method: "GET",
+        headers: { "X-Developer-Email": developerEmail },
+      });
+      const incoming = Array.isArray(response.tickets) ? response.tickets : [];
+      setTasks(incoming.filter((task) => task.workflow_status === "ACTIVE"));
+    } catch (err) {
+      console.error("Error loading accepted task table:", err);
+      setTasks([]);
+      setErrorMessage(err.message || "Failed to load accepted tasks");
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
+
+  useEffect(() => {
+    if (developerEmail) {
+      fetchTasks();
+    }
+  }, [developerEmail]);
+
+  const updateTaskStatus = async (task, nextStatus) => {
+    try {
+      setSavingTaskId(task.task_id);
+      setErrorMessage("");
+      const response = await apiRequest(LOGIN_ENDPOINTS.taskAllocation.updateTicketStatus(task.task_id), {
+        method: "PUT",
+        body: JSON.stringify({
+          new_status: nextStatus,
+          progress_percentage: nextStatus === "DONE" ? 100 : nextStatus === "IN_PROGRESS" ? 50 : 0,
+          reason: `Updated from task table to ${nextStatus}`,
+        }),
+      });
+
+      if (response.success) {
+        await fetchTasks();
+      }
+    } catch (err) {
+      console.error("Error updating task status:", err);
+      setErrorMessage(err.message || "Failed to update status");
+    } finally {
+      setSavingTaskId(null);
+    }
+  };
+
+  const getStatusBadge = (task) => {
+    const workflowStatus = task.status;
+    if (workflowStatus === "DONE") return "bg-success/10 text-success border-success/30";
+    if (workflowStatus === "IN_PROGRESS") return "bg-primary/10 text-primary border-primary/30";
+    if (workflowStatus === "BLOCKED") return "bg-error/10 text-error border-error/30";
+    if (workflowStatus === "DELAYED") return "bg-warning/10 text-warning border-warning/30";
+    return "bg-surface text-textSecondary border-border";
+  };
+
+  const getStatusLabel = (status) => {
+    if (status === "IN_PROGRESS") return "In Progress";
+    if (status === "BLOCKED") return "Blocked";
+    if (status === "DONE") return "Done";
+    if (status === "DELAYED") return "Delayed";
+    return "To Do";
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-textPrimary">My Tasks</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-textPrimary">Task Table</h1>
+          <p className="text-sm text-textSecondary mt-1">Accepted tasks only. Update status here like Jira.</p>
+        </div>
       </div>
-      <div className="bg-white rounded-2xl p-8 border border-border shadow-sm text-center">
-        <div className="w-20 h-20 bg-gradient-to-br from-primary/10 to-secondary/10 rounded-full flex items-center justify-center mx-auto mb-4"><span className="text-4xl">📋</span></div>
-        <h3 className="text-xl font-semibold text-textPrimary mb-2">No Tasks Assigned Yet</h3>
-        <p className="text-textSecondary max-w-md mx-auto">Tasks will appear here once your Scrum Master assigns work to you. Check back later or contact your team lead.</p>
-      </div>
+
+      {loadingTasks ? (
+        <div className="bg-white rounded-2xl p-8 border border-border shadow-sm text-center text-textSecondary">Loading your accepted tasks...</div>
+      ) : errorMessage ? (
+        <div className="bg-white rounded-2xl p-8 border border-error/20 shadow-sm text-center">
+          <div className="w-20 h-20 bg-error/10 rounded-full flex items-center justify-center mx-auto mb-4"><span className="text-4xl">⚠️</span></div>
+          <h3 className="text-xl font-semibold text-textPrimary mb-2">Unable to load task table</h3>
+          <p className="text-textSecondary max-w-md mx-auto mb-4">{errorMessage}</p>
+          <button onClick={fetchTasks} className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium">Try again</button>
+        </div>
+      ) : tasks.length === 0 ? (
+        <div className="bg-white rounded-2xl p-8 border border-border shadow-sm text-center">
+          <div className="w-20 h-20 bg-gradient-to-br from-primary/10 to-secondary/10 rounded-full flex items-center justify-center mx-auto mb-4"><span className="text-4xl">📋</span></div>
+          <h3 className="text-xl font-semibold text-textPrimary mb-2">No Accepted Tasks Yet</h3>
+          <p className="text-textSecondary max-w-md mx-auto">Only accepted tickets appear here. Accept a ticket first, then change its status in this table.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-surface">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-textMuted uppercase tracking-wide">Ticket ID</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-textMuted uppercase tracking-wide">Task Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-textMuted uppercase tracking-wide">Sprint</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-textMuted uppercase tracking-wide">Start Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-textMuted uppercase tracking-wide">End Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-textMuted uppercase tracking-wide">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-textMuted uppercase tracking-wide">Change Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {tasks.map((task) => (
+                  <tr key={task.approval_workflow_id} className="hover:bg-surface/40">
+                    <td className="px-4 py-4 text-sm font-semibold text-textPrimary">{task.ticket_id}</td>
+                    <td className="px-4 py-4">
+                      <div className="text-sm font-semibold text-textPrimary">{task.task_name || task.title}</div>
+                      <div className="text-xs text-textMuted mt-1 max-w-md truncate">{task.description}</div>
+                    </td>
+                    <td className="px-4 py-4 text-sm text-textSecondary">{task.sprint_reference?.name || "-"}</td>
+                    <td className="px-4 py-4 text-sm text-textSecondary">{task.sprint_reference?.start_date || "-"}</td>
+                    <td className="px-4 py-4 text-sm text-textSecondary">{task.sprint_reference?.end_date || "-"}</td>
+                    <td className="px-4 py-4">
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold border ${getStatusBadge(task)}`}>
+                        {getStatusLabel(task.status)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <select
+                        value={task.status}
+                        disabled={savingTaskId === task.task_id}
+                        onChange={(e) => updateTaskStatus(task, e.target.value)}
+                        className="px-3 py-2 rounded-lg border border-border bg-white text-sm text-textPrimary disabled:opacity-50"
+                      >
+                        <option value="IN_PROGRESS">In Progress</option>
+                        <option value="BLOCKED">Blocked</option>
+                        <option value="DONE">Done</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

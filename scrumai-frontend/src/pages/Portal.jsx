@@ -75,16 +75,6 @@ export default function Portal() {
 
           {/* Right side */}
           <div className="flex items-center gap-4">
-            <div className="hidden lg:flex items-center gap-4 text-sm">
-              <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
-                <div className="w-2 h-2 bg-success rounded-full animate-pulse"></div>
-                <span className="text-white font-medium">Sprint Active</span>
-              </div>
-              <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
-                <span className="text-white font-semibold">87%</span>
-                <span className="text-white/80">Progress</span>
-              </div>
-            </div>
 
             <div className="hidden md:flex items-center gap-2 text-sm text-white/80">
               <span>Welcome back,</span>
