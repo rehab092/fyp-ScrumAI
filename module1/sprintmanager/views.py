@@ -363,6 +363,7 @@ class CreateSprintView(View):
             workspace_id=workspace_id,
             name=name,
             goal=goal,
+            project_id=project_id,
             start_date=start_date,
             end_date=end_date,
             is_active=True
@@ -413,6 +414,7 @@ class SprintBacklogView(View):
             items_data.append({
                 'task_id': task.task_id,
                 'tasks': task.tasks,
+                'status': getattr(task, 'status', 'pending'),
                 'estimated_hours': task.estimated_hours,
                 'skills_required': task.skills_required,
                 'priority': priority,
