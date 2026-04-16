@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import toast, { Toaster } from 'react-hot-toast';
-import { getSprintBacklog, createSprint, addTaskToSprint, removeTaskFromSprint, reoptimizeSprint, getAllSprints, getProjectsByWorkspace, getSprintsByProject, updateTaskStatus } from '../../config/api';
+import { getSprintBacklog, createSprint, addTaskToSprint, removeTaskFromSprint, getProjectsByWorkspace, getSprintsByProject, updateTaskStatus, deactivateSprint } from '../../config/api';
 
 const MAX_SPRINT_DURATION_DAYS = 14;
 const TASK_STATUS_CHOICES = ['pending', 'In Progress', 'Completed'];
 
 export default function SprintManagement({ sprints, selectedSprintId, setSelectedSprintId, onSprintCreated }) {
-  const [activeView, setActiveView] = useState("current"); // 'current', 'planning', 'history'
+  const [activeView, setActiveView] = useState("current"); // 'current', 'history'
   const [loading, setLoading] = useState(false);
   const [sprintData, setSprintData] = useState(null);
   const [sprintItems, setSprintItems] = useState([]);
@@ -16,7 +16,18 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
+  const [showAutoCreateModal, setShowAutoCreateModal] = useState(false);
+  const [isAutoCreatingSprint, setIsAutoCreatingSprint] = useState(false);
+  const [autoPromptedSprintId, setAutoPromptedSprintId] = useState('');
+  const [deactivationInProgressSprintId, setDeactivationInProgressSprintId] = useState('');
+  const [deactivatedSprintIds, setDeactivatedSprintIds] = useState([]);
   const [statusUpdatingTaskId, setStatusUpdatingTaskId] = useState(null);
+  const [autoCreateFormData, setAutoCreateFormData] = useState({
+    source_sprint_id: '',
+    name: '',
+    start_date: '',
+    end_date: ''
+  });
   const [createFormData, setCreateFormData] = useState({
     workspace_id: '',
     project_id: '',
@@ -27,18 +38,6 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
   });
   const [addTaskFormData, setAddTaskFormData] = useState({
     task_id: ''
-  });
-  
-  // Mock data for planning view (to be replaced with API data)
-  const [upcomingSprint, setUpcomingSprint] = useState({
-    id: 'Sprint-2',
-    name: 'Sprint Planning',
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    duration: 14,
-    capacity: 40,
-    status: 'Planning',
-    plannedStories: []
   });
   
   // Mock data for history view (to be replaced with API data)
@@ -89,6 +88,44 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
     return error?.message || fallbackMessage;
   };
 
+  const toInputDate = (date) => {
+    if (!date || Number.isNaN(date.getTime())) return '';
+    return date.toISOString().split('T')[0];
+  };
+
+  const addDaysToDateString = (dateString, dayCount) => {
+    if (!dateString) return '';
+    const date = new Date(`${dateString}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return '';
+    date.setDate(date.getDate() + dayCount);
+    return toInputDate(date);
+  };
+
+  const getSprintIdFromResponse = (responseData) => {
+    if (!responseData) return '';
+
+    return (
+      responseData?.id ||
+      responseData?.sprint_id ||
+      responseData?.sprint?.id ||
+      responseData?.data?.id ||
+      ''
+    );
+  };
+
+  const extractSprintsArray = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data?.results && Array.isArray(data.results)) return data.results;
+    if (data?.sprints && Array.isArray(data.sprints)) return data.sprints;
+    if (data?.data && Array.isArray(data.data)) return data.data;
+    return [];
+  };
+
+  const isCompletedSprint = (sprint) => {
+    const statusValue = (sprint?.status || '').toLowerCase();
+    return sprint?.is_active === false || statusValue === 'completed' || statusValue === 'inactive';
+  };
+
   // Load projects on component mount
   useEffect(() => {
     loadProjects();
@@ -100,6 +137,11 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
       loadSprintData(selectedSprintId);
     }
   }, [selectedSprintId]);
+
+  useEffect(() => {
+    const completedSprints = projectSprints.filter(isCompletedSprint);
+    setSprintHistory(completedSprints);
+  }, [projectSprints]);
 
   const loadProjects = async () => {
     try {
@@ -130,16 +172,7 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
     try {
       const data = await getSprintsByProject(projectId);
 
-      let sprintsArray = [];
-      if (Array.isArray(data)) {
-        sprintsArray = data;
-      } else if (data?.results && Array.isArray(data.results)) {
-        sprintsArray = data.results;
-      } else if (data?.sprints && Array.isArray(data.sprints)) {
-        sprintsArray = data.sprints;
-      } else if (data?.data && Array.isArray(data.data)) {
-        sprintsArray = data.data;
-      }
+      const sprintsArray = extractSprintsArray(data);
 
       setProjectSprints(sprintsArray);
 
@@ -247,17 +280,6 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
     }
   };
 
-  const handleReoptimize = async () => {
-    if (!selectedSprintId || !sprintData) return;
-    try {
-      await reoptimizeSprint(selectedSprintId, sprintData.project_id);
-      toast.success('Sprint optimized successfully');
-      loadSprintData(selectedSprintId); // Refresh sprint data
-    } catch (error) {
-      toast.error('Failed to reoptimize sprint: ' + error.message);
-    }
-  };
-
   const getTaskStatusValue = (task) => {
     const receivedStatus = task?.status ?? task?.task_progress_status;
     return receivedStatus ?? 'pending';
@@ -325,6 +347,182 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
   const summaryStatus = currentSprint.is_active ? 'Active' : (currentSprint.status || 'Inactive');
   const summaryUsed = completedCount;
   const summaryCapacity = totalTaskCount;
+  const remainingTaskIds = sprintTasks
+    .filter((task) => (getTaskStatusValue(task) || '').toLowerCase() !== 'completed')
+    .map((task) => task?.task_id || task?.id)
+    .filter(Boolean);
+
+  const openAutoCreateNextSprint = () => {
+    if (!summaryEnd) return;
+
+    const sourceSprintId = (currentSprint?.id || selectedSprintId || '').toString();
+    const nextStartDate = addDaysToDateString(summaryEnd, 1);
+    const nextEndDate = addDaysToDateString(nextStartDate, MAX_SPRINT_DURATION_DAYS);
+
+    if (!sourceSprintId || !nextStartDate || !nextEndDate) return;
+
+    setAutoCreateFormData({
+      source_sprint_id: sourceSprintId,
+      name: '',
+      start_date: nextStartDate,
+      end_date: nextEndDate,
+    });
+    setShowAutoCreateModal(true);
+    setAutoPromptedSprintId(sourceSprintId);
+  };
+
+  const deactivateCompletedSprint = async (sourceSprintId) => {
+    if (!sourceSprintId) return true;
+    if (currentSprint?.is_active === false) return true;
+    if (deactivatedSprintIds.includes(sourceSprintId)) return true;
+
+    setDeactivationInProgressSprintId(sourceSprintId);
+    try {
+      await deactivateSprint(sourceSprintId);
+      setDeactivatedSprintIds((prev) => [...prev, sourceSprintId]);
+
+      setSprintData((prevSprint) => {
+        if (!prevSprint) return prevSprint;
+        const prevSprintId = (prevSprint.id || '').toString();
+        if (prevSprintId !== sourceSprintId.toString()) return prevSprint;
+        return {
+          ...prevSprint,
+          is_active: false,
+          status: 'Inactive',
+        };
+      });
+
+      setProjectSprints((prevSprints) =>
+        prevSprints.map((sprint) => {
+          const sprintId = (sprint?.id || '').toString();
+          if (sprintId !== sourceSprintId.toString()) return sprint;
+          return {
+            ...sprint,
+            is_active: false,
+            status: sprint?.status || 'Inactive',
+          };
+        })
+      );
+
+      toast.success('Sprint marked as inactive.');
+      return true;
+    } catch (error) {
+      toast.error(getBackendErrorMessage(error, 'Failed to mark sprint inactive.'));
+      return false;
+    } finally {
+      setDeactivationInProgressSprintId('');
+    }
+  };
+
+  useEffect(() => {
+    if (!sprintData) return;
+    if (totalTaskCount === 0 || summaryProgress < 100) return;
+    if (showAutoCreateModal || isAutoCreatingSprint) return;
+
+    const sourceSprintId = (currentSprint?.id || selectedSprintId || '').toString();
+    if (!sourceSprintId) return;
+
+    const completeFlow = async () => {
+      if (deactivationInProgressSprintId === sourceSprintId) return;
+
+      const deactivated = await deactivateCompletedSprint(sourceSprintId);
+      if (!deactivated) return;
+      if (autoPromptedSprintId === sourceSprintId) return;
+
+      openAutoCreateNextSprint();
+    };
+
+    completeFlow();
+  }, [
+    sprintData,
+    totalTaskCount,
+    summaryProgress,
+    summaryEnd,
+    selectedSprintId,
+    autoPromptedSprintId,
+    showAutoCreateModal,
+    isAutoCreatingSprint,
+    deactivationInProgressSprintId,
+    deactivatedSprintIds,
+  ]);
+
+  const handleAutoCreateNextSprint = async () => {
+    const workspaceId = localStorage.getItem('workspaceId') || currentSprint?.workspace_id;
+    const projectId = selectedProjectId || currentSprint?.project_id;
+    const sprintName = (autoCreateFormData.name || '').trim();
+
+    if (!workspaceId || !projectId) {
+      toast.error('Missing workspace or project context for creating the next sprint.');
+      return;
+    }
+
+    if (!sprintName) {
+      toast.error('Please enter a sprint name.');
+      return;
+    }
+
+    setIsAutoCreatingSprint(true);
+    try {
+      const createPayload = {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        name: sprintName,
+        goal: `Carry-over sprint from ${summaryName}`,
+        start_date: autoCreateFormData.start_date,
+        end_date: autoCreateFormData.end_date,
+      };
+
+      const createdSprint = await createSprint(createPayload);
+      let newSprintId = getSprintIdFromResponse(createdSprint);
+
+      if (!newSprintId) {
+        const refreshedSprintsRaw = await getSprintsByProject(projectId);
+        const refreshedSprints = extractSprintsArray(refreshedSprintsRaw);
+        const latestSprint = refreshedSprints
+          .slice()
+          .sort((a, b) => {
+            const aId = Number(a?.id) || 0;
+            const bId = Number(b?.id) || 0;
+            return bId - aId;
+          })[0];
+        newSprintId = latestSprint?.id || '';
+      }
+
+      if (!newSprintId) {
+        throw new Error('Next sprint was created but the new sprint id was not returned.');
+      }
+
+      if (remainingTaskIds.length > 0) {
+        const addResults = await Promise.allSettled(
+          remainingTaskIds.map((taskId) => addTaskToSprint(newSprintId, taskId))
+        );
+        const failedAdds = addResults.filter((result) => result.status === 'rejected').length;
+        if (failedAdds > 0) {
+          toast.error(`${failedAdds} task(s) could not be moved to the new sprint.`);
+        }
+      }
+
+      const refreshedSprintsRaw = await getSprintsByProject(projectId);
+      setProjectSprints(extractSprintsArray(refreshedSprintsRaw));
+
+      const nextSprintId = newSprintId.toString();
+      setSelectedSprintId(nextSprintId);
+      await loadSprintData(nextSprintId);
+
+      setShowAutoCreateModal(false);
+      setAutoCreateFormData({
+        source_sprint_id: '',
+        name: '',
+        start_date: '',
+        end_date: ''
+      });
+      toast.success('Next sprint created and selected successfully.');
+    } catch (error) {
+      toast.error(getBackendErrorMessage(error, 'Failed to auto-create next sprint.'));
+    } finally {
+      setIsAutoCreatingSprint(false);
+    }
+  };
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -333,15 +531,6 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
       case "Completed": return "bg-gray-500/20 text-gray-400";
       case "In Progress": return "bg-blue-500/20 text-blue-400";
       case "Ready": return "bg-gray-500/20 text-gray-400";
-      default: return "bg-gray-500/20 text-gray-400";
-    }
-  };
-
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case "High": return "bg-red-500/20 text-red-400";
-      case "Medium": return "bg-yellow-500/20 text-yellow-400";
-      case "Low": return "bg-green-500/20 text-green-400";
       default: return "bg-gray-500/20 text-gray-400";
     }
   };
@@ -362,16 +551,6 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
             }`}
           >
             🏃 Current Sprint
-          </button>
-          <button
-            onClick={() => setActiveView("planning")}
-            className={`px-6 py-3 rounded-lg transition-all ${
-              activeView === "planning"
-                ? "bg-sandTan text-nightBlue shadow-lg"
-                : "border border-sandTan text-sandTan hover:bg-sandTan hover:text-nightBlue"
-            }`}
-          >
-            📋 Sprint Planning
           </button>
           <button
             onClick={() => setActiveView("history")}
@@ -627,95 +806,6 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
         </div>
       )}
 
-      {/* Sprint Planning View */}
-      {activeView === "planning" && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="space-y-8"
-        >
-          {/* Next Sprint Overview */}
-          <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-sandTan mb-2">{upcomingSprint.id}</h2>
-                <p className="text-textMuted text-lg">{upcomingSprint.name}</p>
-                <p className="text-textMuted text-sm">
-                  {upcomingSprint.startDate} - {upcomingSprint.endDate} ({upcomingSprint.duration} days)
-                </p>
-              </div>
-              <div className="flex items-center gap-6">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-sandTan">{upcomingSprint.capacity}</div>
-                  <div className="text-textMuted text-sm">Capacity</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-sandTan">
-                    {upcomingSprint.plannedStories.reduce((sum, story) => sum + story.estimate, 0)}
-                  </div>
-                  <div className="text-textMuted text-sm">Planned Points</div>
-                </div>
-                <span className={`px-4 py-2 rounded-full text-sm font-medium ${getStatusColor(upcomingSprint.status)}`}>
-                  {upcomingSprint.status}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Planned Tasks */}
-          <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-sandTan mb-6">Planned Tasks</h2>
-            
-            <div className="space-y-4">
-              {upcomingSprint.plannedStories.map((story, index) => (
-                <div key={story.id} className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-4">
-                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                    <div className="flex-1">
-                      <h3 className="text-textLight font-semibold mb-1">{story.title}</h3>
-                      <p className="text-textMuted text-sm mb-2">{story.description}</p>
-                      <div className="flex items-center gap-4 text-sm text-textMuted">
-                        <span>Estimate: {story.estimate} points</span>
-                        <span>Assignee: {story.assignee || "Unassigned"}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getPriorityColor(story.priority)}`}>
-                        {story.priority}
-                      </span>
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(story.status)}`}>
-                        {story.status}
-                      </span>
-                      <button className="bg-sandTan text-nightBlue px-3 py-1 rounded text-sm hover:bg-sandTanShadow transition-all">
-                        Assign
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Planning Tools */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6">
-              <h3 className="text-lg font-bold text-sandTan mb-4">Sprint Goals</h3>
-              <textarea
-                placeholder="Define your sprint goals and objectives..."
-                className="w-full bg-nightBlue border border-sandTan/30 rounded-lg p-3 text-textLight focus:outline-none focus:border-sandTan h-32 resize-none"
-              />
-            </div>
-            <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6">
-              <h3 className="text-lg font-bold text-sandTan mb-4">Sprint Notes</h3>
-              <textarea
-                placeholder="Add any important notes or considerations..."
-                className="w-full bg-nightBlue border border-sandTan/30 rounded-lg p-3 text-textLight focus:outline-none focus:border-sandTan h-32 resize-none"
-              />
-            </div>
-          </div>
-        </motion.div>
-      )}
-
       {/* Sprint History View */}
       {activeView === "history" && (
         <motion.div
@@ -726,68 +816,100 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
         >
           <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6">
             <h2 className="text-xl font-bold text-sandTan mb-6">Sprint History</h2>
-            
-            <div className="space-y-4">
-              {sprintHistory.map((sprint, index) => (
-                <div key={sprint.id} className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-6">
-                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                    <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-sandTan mb-1">{sprint.id}</h3>
-                      <p className="text-textMuted text-sm mb-2">{sprint.name}</p>
-                      <p className="text-textMuted text-xs">
-                        {sprint.startDate} - {sprint.endDate}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-6">
-                      <div className="text-center">
-                        <div className="text-lg font-bold text-textLight">{sprint.velocity}</div>
-                        <div className="text-textMuted text-sm">Velocity</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-lg font-bold text-textLight">{sprint.completed}/{sprint.planned}</div>
-                        <div className="text-textMuted text-sm">Completed</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-lg font-bold text-textLight">
-                          {Math.round((sprint.completed / sprint.planned) * 100)}%
-                        </div>
-                        <div className="text-textMuted text-sm">Success Rate</div>
-                      </div>
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(sprint.status)}`}>
-                        {sprint.status}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
 
-          {/* Velocity Trend */}
-          <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-sandTan mb-6">Velocity Trend</h2>
-            
-            <div className="space-y-4">
-              {sprintHistory.map((sprint, index) => (
-                <div key={sprint.id} className="flex items-center gap-4">
-                  <div className="w-24 text-sm text-textMuted">{sprint.id}</div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className="w-4 h-4 bg-sandTan rounded"></div>
-                      <span className="text-sm text-textLight">Velocity: {sprint.velocity}</span>
+            {sprintHistory.length === 0 ? (
+              <p className="text-textMuted">No completed sprints found for this project.</p>
+            ) : (
+              <div className="space-y-4">
+                {sprintHistory.map((sprint, index) => {
+                  const sprintName = sprint.name || sprint.sprint_name || `Sprint ${sprint.id}`;
+                  const sprintStart = sprint.start_date || sprint.startDate || 'N/A';
+                  const sprintEnd = sprint.end_date || sprint.endDate || 'N/A';
+
+                  return (
+                    <div key={sprint.id || index} className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-6">
+                      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <div className="flex-1">
+                          <h3 className="text-lg font-semibold text-sandTan mb-1">{sprintName}</h3>
+                          <p className="text-textMuted text-xs">
+                            {sprintStart} - {sprintEnd}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor('Completed')}`}>
+                            Completed
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="w-full bg-nightBlueShadow rounded-full h-2">
-                      <div
-                        className="bg-sandTan h-2 rounded-full transition-all duration-500"
-                        style={{ width: `${(sprint.velocity / 50) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </motion.div>
+      )}
+
+      {/* Auto Create Next Sprint Modal */}
+      {showAutoCreateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white border border-border rounded-2xl p-4 w-full max-w-sm mx-4 max-h-[90vh] overflow-y-auto shadow-xl"
+          >
+            <h3 className="text-xl font-bold text-textPrimary mb-2">Create Next Sprint</h3>
+            <p className="text-sm text-textSecondary mb-4">
+              Current sprint is fully complete. Enter a name to create the next sprint for remaining tasks.
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-textPrimary mb-1">Sprint Name</label>
+                <input
+                  type="text"
+                  value={autoCreateFormData.name}
+                  onChange={(e) => setAutoCreateFormData({ ...autoCreateFormData, name: e.target.value })}
+                  className="w-full bg-surface border border-border rounded-lg p-3 text-textPrimary focus:outline-none focus:border-primary"
+                  placeholder="Enter next sprint name"
+                />
+              </div>
+              <div>
+                <label className="block text-textPrimary mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={autoCreateFormData.start_date}
+                  disabled
+                  className="w-full bg-surface border border-border rounded-lg p-3 text-textPrimary cursor-not-allowed"
+                />
+              </div>
+              <div>
+                <label className="block text-textPrimary mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={autoCreateFormData.end_date}
+                  disabled
+                  className="w-full bg-surface border border-border rounded-lg p-3 text-textPrimary cursor-not-allowed"
+                />
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4 mt-6">
+              <button
+                onClick={() => setShowAutoCreateModal(false)}
+                className="flex-1 px-4 py-2 border border-border text-textSecondary rounded-lg hover:bg-surface transition-all"
+                disabled={isAutoCreatingSprint}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAutoCreateNextSprint}
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primaryDark transition-all disabled:opacity-60"
+                disabled={isAutoCreatingSprint}
+              >
+                {isAutoCreatingSprint ? 'Creating...' : 'Create Next Sprint'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
       )}
 
       {/* Create Sprint Modal */}

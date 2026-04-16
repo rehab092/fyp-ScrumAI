@@ -103,6 +103,7 @@ export const LOGIN_ENDPOINTS = {
     addTask: (sprintId) => `${API_BASE_URL}api/sprint/${sprintId}/add-task/`,
     removeTask: (sprintId, taskId) => `${API_BASE_URL}api/sprint/${sprintId}/remove-task/${taskId}/`,
     reoptimize: (sprintId) => `${API_BASE_URL}api/sprint/${sprintId}/reoptimize/`,
+    deactivate: (sprintId) => `${API_BASE_URL}api/sprint/${sprintId}/deactivate/`,
   },
 };
 
@@ -259,6 +260,19 @@ export const updateTaskStatus = async (taskId, status, method = 'PATCH') => {
     body: JSON.stringify({ status }),
   });
 };
+
+export const deactivateSprint = async (sprintId) => {
+  try {
+    return await apiRequest(LOGIN_ENDPOINTS.sprint.deactivate(sprintId), {
+      method: 'PATCH',
+    });
+  } catch (error) {
+    return await apiRequest(LOGIN_ENDPOINTS.sprint.deactivate(sprintId), {
+      method: 'POST',
+    });
+  }
+};
+
 
 export const removeTaskFromSprint = async (sprintId, taskId) => {
   return await apiRequest(LOGIN_ENDPOINTS.sprint.removeTask(sprintId, taskId), {
