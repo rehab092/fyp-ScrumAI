@@ -1,7 +1,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 
-export default function ScrumMasterDashboard() {
+export default function ScrumMasterDashboard({ sprints, selectedSprintId, setSelectedSprintId, onStartNewSprint }) {
   const kpiMetrics = [
     {
       title: "Sprint Health",
@@ -37,7 +37,18 @@ export default function ScrumMasterDashboard() {
     }
   ];
 
-  const activeSprints = [
+  const activeSprints = sprints && sprints.length > 0 ? sprints.map((sprint) => ({
+    id: sprint.id,
+    name: sprint.name || sprint.sprint_name || `Sprint ${sprint.id}`,
+    progress: sprint.progress || 0,
+    startDate: sprint.start_date || sprint.startDate || '',
+    endDate: sprint.end_date || sprint.endDate || '',
+    teamSize: sprint.team_size || sprint.teamSize || 0,
+    completedTasks: sprint.completed_tasks || sprint.completedTasks || 0,
+    totalTasks: sprint.total_tasks || sprint.totalTasks || 0,
+    blockers: sprint.blockers || sprint.blocker_count || 0,
+    status: sprint.is_active ? 'On Track' : 'Inactive'
+  })) : [
     {
       id: "Sprint 24",
       name: "Q4 Feature Release",
@@ -189,7 +200,7 @@ export default function ScrumMasterDashboard() {
         transition={{ duration: 0.6 }}
         className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4"
       >
-        <button className="flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-primary to-primaryDark text-white rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105">
+        <button onClick={onStartNewSprint} className="flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-primary to-primaryDark text-white rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105">
           <span className="text-2xl">🚀</span>
           <div className="text-left">
             <div className="font-semibold">Start New Sprint</div>
@@ -405,5 +416,3 @@ export default function ScrumMasterDashboard() {
     </div>
   );
 }
-
-

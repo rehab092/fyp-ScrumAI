@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
+import { getAllSprints } from "../config/api";
 import ScrumMasterDashboard from "../components/scrum-master/ScrumMasterDashboard";
 import TeamOverview from "../components/scrum-master/TeamOverview";
 import SprintManagement from "../components/scrum-master/SprintManagement";
@@ -8,14 +9,38 @@ import ResourcePlanning from "../components/scrum-master/ResourcePlanning";
 import DependencyMonitor from "../components/scrum-master/DependencyMonitor";
 import Reports from "../components/scrum-master/Reports";
 import TaskAllocationHelper from "../components/scrum-master/TaskAllocationHelper";
-import DelayAlerts from "../components/scrum-master/DelayAlerts";
 
 export default function ScrumMasterPortal() {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [sprints, setSprints] = useState([]);
+  const [selectedSprintId, setSelectedSprintId] = useState(null);
   const workspaceName = localStorage.getItem("workspaceName") || "My Workspace";
+
+  useEffect(() => {
+    loadSprints();
+  }, []);
+
+  const loadSprints = async () => {
+    try {
+      const workspaceId = localStorage.getItem('workspaceId');
+      const data = await getAllSprints(workspaceId);
+      setSprints(data);
+
+      if (data.length > 0) {
+        const currentId = selectedSprintId ? selectedSprintId.toString() : null;
+        const hasCurrent = currentId && data.some(s => s.id.toString() === currentId);
+
+        if (!hasCurrent) {
+          setSelectedSprintId(data[0].id.toString());
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load sprints:', error);
+    }
+  };
 
   const navigationItems = [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
@@ -24,30 +49,27 @@ export default function ScrumMasterPortal() {
     { id: "sprints", label: "Sprint Management", icon: "🗓️" },
     { id: "resources", label: "Resource Planning", icon: "📈" },
     { id: "dependencies", label: "Dependency Monitor", icon: "🔗" },
-    { id: "delays", label: "Delay Alerts", icon: "⏰" },
     { id: "reports", label: "Reports", icon: "📋" }
   ];
 
   const renderContent = () => {
     switch (activeTab) {
       case "dashboard":
-        return <ScrumMasterDashboard />;
+        return <ScrumMasterDashboard sprints={sprints} selectedSprintId={selectedSprintId} setSelectedSprintId={setSelectedSprintId} onStartNewSprint={() => setActiveTab("sprints")} />;
       case "taskAllocation":
         return <TaskAllocationHelper />;
       case "team":
         return <TeamOverview />;
       case "sprints":
-        return <SprintManagement />;
+        return <SprintManagement sprints={sprints} selectedSprintId={selectedSprintId} setSelectedSprintId={setSelectedSprintId} onSprintCreated={loadSprints} />;
       case "resources":
         return <ResourcePlanning />;
       case "dependencies":
         return <DependencyMonitor />;
-      case "delays":
-        return <DelayAlerts />;
       case "reports":
         return <Reports />;
       default:
-        return <ScrumMasterDashboard />;
+        return <ScrumMasterDashboard sprints={sprints} selectedSprintId={selectedSprintId} setSelectedSprintId={setSelectedSprintId} />;
     }
   };
 

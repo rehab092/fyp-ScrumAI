@@ -5,7 +5,6 @@ const API_BASE_URL = 'http://localhost:8000/';
 
 // For direct backend calls (bypassing proxy), use this:
 const DIRECT_API_BASE_URL = 'http://localhost:8000/';
-const DELAY_ALERTS_BASE_URL = 'http://127.0.0.1:8000/';
 
 // Match the pattern of old APIs:
 // Old APIs: http://localhost:8000/userstories/...
@@ -36,15 +35,14 @@ export const LOGIN_ENDPOINTS = {
   // User Stories / Backlog Endpoints
   userStories: {
     getAll: `${API_BASE_URL}userstories/tasks/`, // Get all tasks with user stories
+    create: `${API_BASE_URL}userstories`,
     getByOwner: (ownerId) => `${API_BASE_URL}userstories/userstories/owner/${ownerId}/`, // Get user stories by owner
-    getAllStories: `${API_BASE_URL}userstories/stories/`, // Get all user stories
-    create: `${API_BASE_URL}userstories/create_story/`, // Create user story with LLM decomposition (JSON POST)
+
     createBulk: `${API_BASE_URL}userstories/bulk`,
-    upload: `${API_BASE_URL}userstories/create_backlog/`, // Upload with FormData (multi-line)
+    upload: `${API_BASE_URL}userstories/create_backlog/`, // Upload with FormData
     getById: (id) => `${API_BASE_URL}userstories/${id}`,
-    update: (id) => `${API_BASE_URL}userstories/story/${id}/update/`, // Update user story
-    delete: (id) => `${API_BASE_URL}userstories/story/${id}/delete/`, // Delete user story
-    userStories: `${API_BASE_URL}userstories/`, // Base user stories endpoint
+    update: (id) => `${API_BASE_URL}userstories/${id}`,
+    delete: (id) => `${API_BASE_URL}userstories/story/${id}/delete/`,
 
   },
 
@@ -66,7 +64,6 @@ export const LOGIN_ENDPOINTS = {
   },
    projects: {
     getAll: `${API_BASE_URL}projects/`, // Get all projects
-    getAllFromUserStories: `${API_BASE_URL}userstories/projects/`, // Fallback catalog for dependency page
     getByOwner: (ownerId) => `${API_BASE_URL}userstories/projects/owner/${ownerId}/`, // Get projects by owner
     getIdByName: (name) => `${API_BASE_URL}userstories/project/id_by_name/?name=${encodeURIComponent(name)}`,
     create: `${API_BASE_URL}userstories/project/create/`, // Create project (POST)
@@ -81,39 +78,6 @@ export const LOGIN_ENDPOINTS = {
     delete: (taskId) => `${API_BASE_URL}userstories/task/${taskId}/delete/`, // Delete task
   },
 
-  // Sprint Task Management Endpoints (Product Owner → Scrum Master)
-  sprintTasks: {
-    addTaskToSprint: `${API_BASE_URL}userstories/sprint/add-task/`, // Add task to sprint (POST)
-    getSprintTasks: (sprintId) => `${API_BASE_URL}userstories/sprint/${sprintId}/tasks/`, // Get tasks in sprint (GET)
-    removeTaskFromSprint: (sprintItemId) => `${API_BASE_URL}userstories/sprint/task/${sprintItemId}/remove/`, // Remove task from sprint (DELETE)
-  },
-
-  // Dependency Endpoints
-  dependencies: {
-    getByProject: (projectId) => `${API_BASE_URL}api/dependencies/project/${projectId}/`,
-  },
-
-  // Delay Alerts Endpoints
-  delayAlerts: {
-    getProjects: `${DELAY_ALERTS_BASE_URL}api/delay-alerts/projects/`,
-    getProjectContext: (projectId, sprintId) =>
-      `${DELAY_ALERTS_BASE_URL}api/delay-alerts/project/${projectId}/context/${
-        sprintId ? `?sprintId=${encodeURIComponent(sprintId)}` : ""
-      }`,
-    runEngine: `${DELAY_ALERTS_BASE_URL}api/delay-alerts/engine/run/`,
-    upsertTaskProgress: `${DELAY_ALERTS_BASE_URL}api/delay-alerts/task-progress/upsert/`,
-    listAlerts: (projectId, active = true) => {
-      const params = new URLSearchParams();
-      if (projectId != null && projectId !== "") {
-        params.set("projectId", String(projectId));
-      }
-      params.set("active", String(Boolean(active)));
-      const query = params.toString();
-      return `${DELAY_ALERTS_BASE_URL}api/delay-alerts/alerts/${query ? `?${query}` : ""}`;
-    },
-    resolveAlert: (alertId) => `${DELAY_ALERTS_BASE_URL}api/delay-alerts/alerts/${alertId}/resolve/`,
-  },
-
   // Team Members Endpoints (require Workspace-ID header)
   team: {
     add: `${MODULE2_BASE_URL}team/add/`, // Add team member (POST)
@@ -126,15 +90,19 @@ export const LOGIN_ENDPOINTS = {
   // Management Roles Endpoints (require Workspace-ID header)
   management: {
     addManagementUser: `${MODULE2_BASE_URL}roles/add-management-user/`, // Add Scrum Master or Product Owner (POST)
-    updateManagementUser: (id) => `${MODULE2_BASE_URL}roles/update-management-user/${id}/`, // Update Scrum Master or Product Owner (PUT)
     getScrumMasters: `${MODULE2_BASE_URL}roles/get-scrum-masters/`, // Get all Scrum Masters (GET)
     getProductOwners: `${MODULE2_BASE_URL}roles/get-product-owners/`, // Get all Product Owners (GET)
+    updateManagementUser: (id) => `${MODULE2_BASE_URL}roles/update-management-user/${id}/`, // Update Scrum Master or Product Owner (PATCH)
   },
 
-  // Workspace Settings Endpoints
-  workspace: {
-    updateSettings: `${MODULE2_BASE_URL}workspace/update-settings/`, // Update workspace settings including Scrum configuration (PUT)
-    getSettings: `${MODULE2_BASE_URL}workspace/settings/`, // Get workspace settings (GET)
+  // Sprint Endpoints
+  sprint: {
+    list: `${API_BASE_URL}api/sprint/list/`,
+    create: `${API_BASE_URL}api/sprint/create/`,
+    getBacklog: (sprintId) => `${API_BASE_URL}api/sprint/${sprintId}/backlog/`,
+    addTask: (sprintId) => `${API_BASE_URL}api/sprint/${sprintId}/add-task/`,
+    removeTask: (sprintId, taskId) => `${API_BASE_URL}api/sprint/${sprintId}/remove-task/${taskId}/`,
+    reoptimize: (sprintId) => `${API_BASE_URL}api/sprint/${sprintId}/reoptimize/`,
   },
 };
 
@@ -245,6 +213,66 @@ export const apiRequest = async (url, options = {}) => {
   }
 };
 
+// Sprint API Functions
+export const getAllSprints = async (workspaceId) => {
+  // Changed to use project-based API instead of workspace-based
+  // Using project ID 1 as specified by user
+  const data = await getSprintsByProject(1);
+  return Array.isArray(data) ? data : [];
+};
+
+export const getSprintBacklog = async (sprintId) => {
+  return await apiRequest(LOGIN_ENDPOINTS.sprint.getBacklog(sprintId));
+};
+
+export const createSprint = async (sprintData) => {
+  return await apiRequest(LOGIN_ENDPOINTS.sprint.create, {
+    method: 'POST',
+    body: JSON.stringify(sprintData),
+  });
+};
+
+export const getProjectsByWorkspace = async (workspaceId) => {
+  if (!workspaceId) {
+    throw new Error('workspaceId is required to fetch projects by workspace');
+  }
+  return await apiRequest(`${API_BASE_URL}userstories/projects/workspace/${workspaceId}/`);
+};
+
+export const getSprintsByProject = async (projectId) => {
+  if (!projectId) {
+    throw new Error('projectId is required to fetch sprints by project');
+  }
+  return await apiRequest(`${API_BASE_URL}api/sprint/project/${projectId}/sprints/`);
+};
+
+export const addTaskToSprint = async (sprintId, taskId) => {
+  return await apiRequest(LOGIN_ENDPOINTS.sprint.addTask(sprintId), {
+    method: 'POST',
+    body: JSON.stringify({ task_id: taskId }),
+  });
+};
+
+export const updateTaskStatus = async (taskId, status, method = 'PATCH') => {
+  return await apiRequest(`${API_BASE_URL}userstories/task/${taskId}/status/`, {
+    method,
+    body: JSON.stringify({ status }),
+  });
+};
+
+export const removeTaskFromSprint = async (sprintId, taskId) => {
+  return await apiRequest(LOGIN_ENDPOINTS.sprint.removeTask(sprintId, taskId), {
+    method: 'DELETE',
+  });
+};
+
+export const reoptimizeSprint = async (sprintId, projectId) => {
+  return await apiRequest(LOGIN_ENDPOINTS.sprint.reoptimize(sprintId), {
+    method: 'POST',
+    body: JSON.stringify({ project_id: projectId }),
+  });
+};
+
 // API Helper Function for FormData requests
 export const apiRequestFormData = async (url, formData) => {
   try {
@@ -284,7 +312,3 @@ export const apiRequestFormData = async (url, formData) => {
 };
  
 export default LOGIN_ENDPOINTS;
-
-
-
-
