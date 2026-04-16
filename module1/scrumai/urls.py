@@ -23,6 +23,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('userstories/', include('userstorymanager.urls')),
     path('api/module2/', include('assignment_module.urls')),
+    path('api/module2/', include('taskalloactionhelper.urls')),
     path("api/auth/", include("authsystem.urls")),
     path('api/sprint/', include('sprintmanager.urls')),
     path('api/dependencies/', include('taskdependency.urls')),

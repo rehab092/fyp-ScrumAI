@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     'authsystem',
     "taskdependency",
     "delayalerts",
+    "taskalloactionhelper",
 
 ]
 # ADD THIS - Allow custom headers including Workspace-ID
@@ -44,6 +45,7 @@ CORS_ALLOW_HEADERS = [
     "x-csrftoken",
     "x-requested-with",
     "workspace-id",  # Your custom header
+    "x-developer-email",
 ]
 
 REST_FRAMEWORK = {
