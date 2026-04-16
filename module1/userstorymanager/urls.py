@@ -17,6 +17,7 @@ urlpatterns = [
     path('tasks/', views.get_all_tasks, name='get_all_tasks'),  #  Get all tasks
     path('tasks/<int:user_story_id>/', views.get_tasks_by_user_story, name='get_tasks_by_user_story'),  # Get tasks for a user story
     path('task/<int:task_id>/update/', views.update_task, name='update_task'),  # Update task
+    path('task/<int:task_id>/status/', views.update_task_status, name='update_task_status'),  # Update task status
     path('task/<int:task_id>/delete/', views.delete_task, name='delete_task'),  # Delete task
     path('story/<int:user_story_id>/delete/', views.delete_user_story, name='delete_user_story'),
 
@@ -42,8 +43,7 @@ path('owner_by_email/', views.get_product_owner_by_email, name='owner_by_email')
     # Sprint task management (Product Owner → Scrum Master)
     path('sprint/add-task/', views.add_task_to_sprint, name='add_task_to_sprint'),  # Add task to sprint
     path('sprint/<int:sprint_id>/tasks/', views.get_sprint_tasks, name='get_sprint_tasks'),  # Get all tasks in a sprint
-    path('sprint/task/<int:sprint_item_id>/remove/', views.remove_task_from_sprint, name='remove_task_from_sprint'),
-      path('task/<int:task_id>/status/', views.update_task_status, name='update_task_status'),  # Remove task from sprint
+    path('sprint/task/<int:sprint_item_id>/remove/', views.remove_task_from_sprint, name='remove_task_from_sprint'),  # Remove task from sprint
 
     # Sprint Assignments (Product Owner assigns stories to sprints)
     path('sprint-assignments/save/', views.save_sprint_assignments, name='save_sprint_assignments'),  # Save sprint assignments

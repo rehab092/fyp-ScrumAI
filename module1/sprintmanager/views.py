@@ -5,7 +5,7 @@ from django.utils.decorators import method_decorator
 from django.views import View
 import json
 from .models import Sprint, SprintItem
-from userstorymanager.models import Backlog, UserStory
+from userstorymanager.models import Backlog, UserStory, SprintAssignment
 from assignment_module.models import TeamMember
 from taskdependency.models import TaskDependency
 try:
@@ -74,6 +74,7 @@ def get_backlog_tasks(project_id):
             'project_id': task.project_id,
             'user_story_id': task.user_story.id if task.user_story else None,
             'priority': task.user_story.priority if task.user_story else None,
+            'story_points': task.user_story.story_points if task.user_story and task.user_story.story_points is not None else 0,
             'priority_score': priority_score,
             'estimated_hours': float(task.estimated_hours or 0),
             'skills_required': task.skills_required or '',
@@ -82,6 +83,26 @@ def get_backlog_tasks(project_id):
             'task_model': task
         })
     return result
+
+
+def get_sprint_assignment_map(project_id, sprint_number=None):
+    assignments = SprintAssignment.objects.filter(project_id=project_id).select_related('user_story')
+    if sprint_number is not None:
+        assignments = assignments.filter(sprint_number=sprint_number)
+
+    priority_map = {'high': 3, 'medium': 2, 'low': 1}
+    assignment_map = {}
+    for assignment in assignments:
+        assignment_map[assignment.user_story_id] = {
+            'sprint_number': assignment.sprint_number,
+            'priority': assignment.priority,
+            'priority_score': priority_map.get(str(assignment.priority).lower(), 0),
+            'story_points': assignment.story_points if assignment.story_points is not None else (
+                assignment.user_story.story_points if assignment.user_story and assignment.user_story.story_points is not None else 0
+            ),
+        }
+
+    return assignment_map
 
 def get_team_capacity(workspace_id):
     members = TeamMember.objects.filter(workspace_id=workspace_id, status='available')
@@ -111,8 +132,14 @@ def run_ilp_optimizer(tasks, dependencies, capacity):
             continue
         x[task_id] = pulp.LpVariable(f"x_{task_id}", cat='Binary')
 
-    # Objective uses numerical priority_score; if missing, fallback to priority field.
-    prob += pulp.lpSum((task.get('priority_score') or task.get('priority') or 0) * x[task['task_id']] for task in tasks if task.get('task_id') in x)
+    # Objective prefers higher PO/user-story priority and lower story-point effort.
+    prob += pulp.lpSum(
+        (
+            (float(task.get('priority_score') or 0) * 1000)
+            - float(task.get('story_points') or 0)
+        ) * x[task['task_id']]
+        for task in tasks if task.get('task_id') in x
+    )
 
     # Hours constraint; use 0 for missing values to avoid None problems.
     prob += pulp.lpSum((task.get('estimated_hours') or 0) * x[task['task_id']] for task in tasks if task.get('task_id') in x) <= capacity
@@ -214,7 +241,14 @@ def check_task_skill_feasibility(tasks, workspace_id):
 
 def run_greedy_fallback(tasks, dependencies, capacity):
     # Sort tasks by priority descending
-    sorted_tasks = sorted(tasks, key=lambda t: t['priority'] or 0, reverse=True)
+    sorted_tasks = sorted(
+        tasks,
+        key=lambda t: (
+            -(float(t.get('priority_score') or 0)),
+            float(t.get('story_points') or 0),
+            float(t.get('estimated_hours') or 0),
+        )
+    )
     selected = []
     total_hours = 0
     dep_map = {dep['task_id']: dep['predecessor_task_id'] for dep in dependencies}
@@ -237,18 +271,56 @@ class CreateSprintView(View):
         data = json.loads(request.body)
         workspace_id = data.get('workspace_id')
         project_id = data.get('project_id')
+        sprint_number = data.get('sprint_number')
         name = data.get('name')
         goal = data.get('goal')
         start_date = data.get('start_date')
         end_date = data.get('end_date')
 
+        if sprint_number is None:
+            sprint_number = Sprint.objects.filter(project_id=project_id).count() + 1
+        else:
+            try:
+                sprint_number = int(sprint_number)
+            except (TypeError, ValueError):
+                return JsonResponse({'message': 'sprint_number must be an integer'}, status=400)
+
         # Step 0: Identify all project backlog tasks (including active sprint ones)
         all_backlog_raw = Backlog.objects.filter(project_id=project_id).select_related('user_story')
         all_backlog_task_ids = set(all_backlog_raw.values_list('task_id', flat=True))
+        if not all_backlog_task_ids:
+            return JsonResponse(
+                {'message': 'Sprint Cant be Created Due to No Tasks in the backlog '},
+                status=400
+            )
         active_task_ids = set(SprintItem.objects.filter(sprint__is_active=True).values_list('task__task_id', flat=True))
 
+        assignment_map = get_sprint_assignment_map(project_id, sprint_number)
+        assigned_story_ids = set(assignment_map.keys())
+
         # Step 1: Get backlog tasks available for planning (excluding active sprint items)
-        tasks = [t for t in get_backlog_tasks(project_id) if t.get('task_progress_status') != 'completed']
+        all_tasks = [t for t in get_backlog_tasks(project_id) if t.get('task_progress_status') != 'completed']
+        if assigned_story_ids:
+            tasks = [t for t in all_tasks if t.get('user_story_id') in assigned_story_ids]
+        else:
+            tasks = all_tasks
+
+        if not tasks and assigned_story_ids:
+            return JsonResponse(
+                {
+                    'message': 'Sprint is not feasible because assigned user stories cannot be scheduled in this sprint',
+                    'sprint_number': sprint_number,
+                    'selected_tasks': [],
+                    'excluded_tasks': [
+                        {
+                            'user_story_id': story_id,
+                            'reason': 'not feasible or blocked for the assigned sprint order'
+                        }
+                        for story_id in sorted(assigned_story_ids)
+                    ]
+                },
+                status=400
+            )
 
         # Save tasks blocked by active sprint for later reporting
         active_blocked_tasks = [
@@ -262,10 +334,30 @@ class CreateSprintView(View):
             if task.task_id in active_task_ids
         ]
 
+        if assigned_story_ids:
+            active_blocked_tasks.extend([
+                {
+                    'task_id': task['task_id'],
+                    'task_name': task.get('task_name', ''),
+                    'task_progress_status': task.get('task_progress_status', 'pending'),
+                    'reason': f'not assigned to sprint {sprint_number}'
+                }
+                for task in all_tasks
+                if task.get('user_story_id') not in assigned_story_ids
+            ])
+
         # Step 2: Derive priorities and normalize
         for t in tasks:
-            if 'priority_score' not in t or t['priority_score'] is None:
+            assignment = assignment_map.get(t.get('user_story_id'))
+            if assignment:
+                t['priority'] = assignment['priority']
+                t['priority_score'] = assignment['priority_score']
+                t['story_points'] = assignment['story_points']
+            elif 'priority_score' not in t or t['priority_score'] is None:
                 t['priority_score'] = int(t.get('priority') or 0)
+
+            if t.get('story_points') in [None, '']:
+                t['story_points'] = t['task_model'].user_story.story_points if t.get('task_model') and t['task_model'].user_story and t['task_model'].user_story.story_points is not None else 0
 
         # Step 3: Team capacity
         total_capacity = get_team_capacity(workspace_id)
@@ -293,7 +385,7 @@ class CreateSprintView(View):
             selected_task_ids = run_greedy_fallback(candidates, load_dependencies(project_id), sprint_capacity)
 
         # Step 7: Ensure non-empty selection if any feasible task exists
-        if not selected_task_ids and candidates:
+        if not selected_task_ids and candidates and not assigned_story_ids:
             best = sorted(candidates, key=lambda t: (-t['priority_score'], t['estimated_hours']))[0]
             selected_task_ids = [best['task_id']]
 
@@ -308,6 +400,7 @@ class CreateSprintView(View):
                 'task_name': t.get('task_name', ''),
                 'priority': t.get('priority'),
                 'priority_score': t.get('priority_score'),
+                'story_points': t.get('story_points', 0),
                 'estimated_hours': t.get('estimated_hours', 0),
                 'skills_required': list(normalize_skills(t.get('skills_required'))),
                 'task_progress_status': t.get('task_progress_status', 'pending')
@@ -347,11 +440,23 @@ class CreateSprintView(View):
             if not any(e['task_id'] == skip['task_id'] for e in excluded_tasks):
                 excluded_tasks.append(skip)
 
+        if assigned_story_ids and not selected_task_ids:
+            return JsonResponse(
+                {
+                    'message': 'Sprint is not feasible because none of the assigned user stories can be scheduled',
+                    'sprint_number': sprint_number,
+                    'selected_tasks': [],
+                    'excluded_tasks': excluded_tasks,
+                },
+                status=400
+            )
+
 
         carry_forward_tasks = [
             {
                 'task_id': t['task_id'],
                 'task_name': t.get('task_name', ''),
+                'story_points': t.get('story_points', 0),
                 'reason_for_carry_forward': 'not selected this sprint'
             }
             for t in tasks if t['task_id'] not in selected_set and t['task_progress_status'] != 'completed'
@@ -383,6 +488,7 @@ class CreateSprintView(View):
 
         return JsonResponse({
             'sprint_name': name,
+            'sprint_number': sprint_number,
             'sprint_duration': '2 weeks',
             'total_team_capacity_hours': total_capacity,
             'total_selected_hours': total_selected_hours,
@@ -516,3 +622,19 @@ class ListSprintsByProjectView(View):
             for s in sprints
         ]
         return JsonResponse({'sprints': sprint_list})
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class DeactivateSprintView(View):
+    def patch(self, request, sprint_id):
+        sprint = get_object_or_404(Sprint, id=sprint_id)
+        if not sprint.is_active:
+            return JsonResponse({'message': 'Sprint is already inactive', 'is_active': False})
+
+        sprint.is_active = False
+        sprint.save(update_fields=['is_active'])
+        return JsonResponse({'message': 'Sprint status updated successfully', 'is_active': sprint.is_active})
+
+    # Keep POST support for clients that cannot send PATCH.
+    def post(self, request, sprint_id):
+        return self.patch(request, sprint_id)

@@ -885,6 +885,49 @@ def update_task(request, task_id):
 
 
 @csrf_exempt
+def update_task_status(request, task_id):
+    """Update backlog task status to pending, In Progress, or Completed."""
+    if request.method not in ['PUT', 'PATCH']:
+        return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    status_in = data.get('status')
+    if status_in is None:
+        return JsonResponse({'error': 'status is required'}, status=400)
+
+    status_map = {
+        'pending': Backlog.STATUS_PENDING,
+        'in progress': Backlog.STATUS_IN_PROGRESS,
+        'completed': Backlog.STATUS_COMPLETED,
+    }
+
+    normalized = str(status_in).strip().lower()
+    if normalized not in status_map:
+        return JsonResponse(
+            {'error': 'Invalid status. Allowed values: pending, In Progress, Completed'},
+            status=400
+        )
+
+    try:
+        backlog = Backlog.objects.get(task_id=task_id)
+    except Backlog.DoesNotExist:
+        return JsonResponse({'error': 'Task not found'}, status=404)
+
+    backlog.status = status_map[normalized]
+    backlog.save(update_fields=['status'])
+
+    return JsonResponse({
+        'message': 'Task status updated successfully',
+        'task_id': backlog.task_id,
+        'status': backlog.status,
+    })
+
+
+@csrf_exempt
 def delete_task(request, task_id):
     """Delete a specific task/subtask from backlog."""
     if request.method == 'DELETE':
@@ -1811,48 +1854,6 @@ def seed_test_project(request, owner_id):
 # ========================================
 # SPRINT TASK MANAGEMENT (Product Owner → Scrum Master)
 # ========================================
-
-@csrf_exempt
-def update_task_status(request, task_id):
-    """Update backlog task status to pending, In Progress, or Completed."""
-    if request.method not in ['PUT', 'PATCH']:
-        return JsonResponse({'error': 'Invalid request method'}, status=405)
-
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-    status_in = data.get('status')
-    if status_in is None:
-        return JsonResponse({'error': 'status is required'}, status=400)
-
-    status_map = {
-        'pending': Backlog.STATUS_PENDING,
-        'in progress': Backlog.STATUS_IN_PROGRESS,
-        'completed': Backlog.STATUS_COMPLETED,
-    }
-
-    normalized = str(status_in).strip().lower()
-    if normalized not in status_map:
-        return JsonResponse(
-            {'error': 'Invalid status. Allowed values: pending, In Progress, Completed'},
-            status=400
-        )
-
-    try:
-        backlog = Backlog.objects.get(task_id=task_id)
-    except Backlog.DoesNotExist:
-        return JsonResponse({'error': 'Task not found'}, status=404)
-
-    backlog.status = status_map[normalized]
-    backlog.save(update_fields=['status'])
-
-    return JsonResponse({
-        'message': 'Task status updated successfully',
-        'task_id': backlog.task_id,
-        'status': backlog.status,
-    })
 
 @csrf_exempt
 def add_task_to_sprint(request):
