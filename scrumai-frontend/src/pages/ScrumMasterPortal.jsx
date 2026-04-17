@@ -5,11 +5,11 @@ import { getAllSprints } from "../config/api";
 import ScrumMasterDashboard from "../components/scrum-master/ScrumMasterDashboard";
 import TeamOverview from "../components/scrum-master/TeamOverview";
 import SprintManagement from "../components/scrum-master/SprintManagement";
-import ResourcePlanning from "../components/scrum-master/ResourcePlanning";
 import DependencyMonitor from "../components/scrum-master/DependencyMonitor";
 import Reports from "../components/scrum-master/Reports";
 import TaskAllocationHelper from "../components/scrum-master/TaskAllocationHelper";
 import DelayAlerts from "../components/scrum-master/DelayAlerts";
+import DeveloperResponseTracker from "../components/scrum-master/DeveloperResponseTracker";
 
 export default function ScrumMasterPortal() {
   const { user, logout } = useAuth();
@@ -46,9 +46,9 @@ export default function ScrumMasterPortal() {
   const navigationItems = [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
     { id: "taskAllocation", label: "Task Allocation", icon: "🧩" },
+    { id: "responses", label: "Developer Responses", icon: "📞" },
     { id: "team", label: "Team Overview", icon: "👥" },
     { id: "sprints", label: "Sprint Management", icon: "🗓️" },
-    { id: "resources", label: "Resource Planning", icon: "📈" },
     { id: "dependencies", label: "Dependency Monitor", icon: "🔗" },
     { id: "delays", label: "Delay Alerts", icon: "⏰" },
     { id: "reports", label: "Reports", icon: "📋" }
@@ -60,12 +60,12 @@ export default function ScrumMasterPortal() {
         return <ScrumMasterDashboard sprints={sprints} selectedSprintId={selectedSprintId} setSelectedSprintId={setSelectedSprintId} onStartNewSprint={() => setActiveTab("sprints")} />;
       case "taskAllocation":
         return <TaskAllocationHelper />;
+      case "responses":
+        return <DeveloperResponseTracker />;
       case "team":
         return <TeamOverview />;
       case "sprints":
         return <SprintManagement sprints={sprints} selectedSprintId={selectedSprintId} setSelectedSprintId={setSelectedSprintId} onSprintCreated={loadSprints} />;
-      case "resources":
-        return <ResourcePlanning />;
       case "dependencies":
         return <DependencyMonitor />;
       case "delays":
@@ -140,25 +140,6 @@ export default function ScrumMasterPortal() {
                       <span>🏢</span>
                       <span>{workspaceName}</span>
                     </div>
-                  </div>
-                  
-                  <div className="py-2">
-                    <button className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2">
-                      <span>👤</span>
-                      Profile Settings
-                    </button>
-                    <button className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2">
-                      <span>👥</span>
-                      Team Management
-                    </button>
-                    <button className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2">
-                      <span>📊</span>
-                      Analytics
-                    </button>
-                    <button className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2">
-                      <span>❓</span>
-                      Help & Support
-                    </button>
                   </div>
                   
                   <div className="border-t border-border pt-2">
