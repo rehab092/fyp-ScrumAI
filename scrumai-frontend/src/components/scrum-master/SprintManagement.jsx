@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import toast, { Toaster } from 'react-hot-toast';
-import { getSprintBacklog, createSprint, addTaskToSprint, removeTaskFromSprint, getProjectsByWorkspace, getSprintsByProject, updateTaskStatus, deactivateSprint } from '../../config/api';
+import { getSprintBacklog, createSprint, addTaskToSprint, removeTaskFromSprint, getProjectsByWorkspace, getSprintsByProject, updateTaskStatus, deactivateSprint, editSprint, deleteSprint } from '../../config/api';
 
 const MAX_SPRINT_DURATION_DAYS = 14;
 const TASK_STATUS_CHOICES = ['pending', 'In Progress', 'Completed'];
@@ -40,7 +40,19 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
     task_id: ''
   });
   
-  // Mock data for history view (to be replaced with API data)
+  // Edit and Delete Sprint States
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingSprintId, setEditingSprintId] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    description: ''
+  });
+  const [isEditingSprint, setIsEditingSprint] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingSprintId, setDeletingSprintId] = useState(null);
+  const [isDeletingSprint, setIsDeletingSprint] = useState(false);
+  
+  // Sprint history data for selected project
   const [sprintHistory, setSprintHistory] = useState([]);
 
   const getSprintDateDifferenceInDays = (startDate, endDate) => {
@@ -126,6 +138,19 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
     return sprint?.is_active === false || statusValue === 'completed' || statusValue === 'inactive';
   };
 
+  const getSprintStatusLabel = (sprint) => {
+    const rawStatus = (sprint?.status || '').toLowerCase();
+
+    if (sprint?.is_active === true) return 'Running';
+    if (rawStatus === 'in progress' || rawStatus === 'running' || rawStatus === 'active') return 'Running';
+    if (rawStatus === 'completed') return 'Completed';
+    if (rawStatus === 'planning') return 'Planning';
+    if (rawStatus === 'ready') return 'Ready';
+    if (sprint?.is_active === false || rawStatus === 'inactive') return 'Completed';
+
+    return sprint?.status || 'Unknown';
+  };
+
   // Load projects on component mount
   useEffect(() => {
     loadProjects();
@@ -139,8 +164,7 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
   }, [selectedSprintId]);
 
   useEffect(() => {
-    const completedSprints = projectSprints.filter(isCompletedSprint);
-    setSprintHistory(completedSprints);
+    setSprintHistory(projectSprints);
   }, [projectSprints]);
 
   const loadProjects = async () => {
@@ -212,11 +236,71 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
     }
   };
 
+  // Check if a new sprint can be created for the selected project
+  const getActiveSprint = () => {
+    return projectSprints.find(sprint => sprint?.is_active === true);
+  };
+
+  const canCreateNewSprint = () => {
+    const activeSprint = getActiveSprint();
+    
+    // If no active sprint exists, new sprint can be created
+    if (!activeSprint) {
+      return { canCreate: true, message: '' };
+    }
+
+    // Get all tasks for the active sprint
+    const activeSprintId = activeSprint?.id;
+    if (selectedSprintId && selectedSprintId.toString() === activeSprintId?.toString()) {
+      // Current sprint is selected, we have task data
+      const completedCount = sprintTasks.filter(
+        (task) => (getTaskStatusValue(task) || '').toLowerCase() === 'completed'
+      ).length;
+      const totalTaskCount = sprintTasks.length;
+
+      if (totalTaskCount === 0) {
+        return {
+          canCreate: true,
+          message: ''
+        };
+      }
+
+      const isComplete = completedCount === totalTaskCount &&
+        (activeSprint?.is_active === false || activeSprint?.status?.toLowerCase() === 'completed');
+
+      if (!isComplete) {
+        const progressPercent = Math.round((completedCount / totalTaskCount) * 100);
+        return {
+          canCreate: false,
+          message: `Cannot create a new sprint. Current sprint "${activeSprint?.name || 'Active Sprint'}" is still in progress (${progressPercent}% tasks completed). Complete all tasks and mark the sprint as completed first.`
+        };
+      }
+
+      return { canCreate: true, message: '' };
+    } else {
+      // Active sprint is not selected, we need to assume it's not complete
+      // Show a warning message
+      return {
+        canCreate: false,
+        message: `Cannot create a new sprint. Project has an active sprint "${activeSprint?.name || 'Active Sprint'}" that must be completed first. Please complete all tasks in the current sprint and mark it as completed.`
+      };
+    }
+  };
+
   const handleCreateSprint = async () => {
-    const { workspace_id, project_id, name, start_date, end_date } = createFormData;
+    // Check if new sprint can be created
+    const sprintValidation = canCreateNewSprint();
+    if (!sprintValidation.canCreate) {
+      toast.error(sprintValidation.message);
+      return;
+    }
+
+    // Get workspace_id from localStorage if not in form data
+    const workspaceId = createFormData.workspace_id || localStorage.getItem('workspaceId');
+    const { project_id, name, start_date, end_date } = createFormData;
     const sprintDurationDays = getSprintDateDifferenceInDays(start_date, end_date);
 
-    if (!workspace_id || !project_id || !name || !start_date || !end_date) {
+    if (!workspaceId || !project_id || !name || !start_date || !end_date) {
       toast.error('Please fill in all sprint details before creating it.');
       return;
     }
@@ -237,7 +321,9 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
     }
 
     try {
-      await createSprint(createFormData);
+      // Pass workspace_id from localStorage in the request
+      const createResponse = await createSprint({ ...createFormData, workspace_id: workspaceId });
+      const createdSprintId = getSprintIdFromResponse(createResponse);
       toast.success('Sprint created successfully');
       setShowCreateModal(false);
       setCreateFormData({
@@ -248,7 +334,31 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
         start_date: '',
         end_date: ''
       });
-      setProjectSprints([]); // Clear project sprints when modal closes
+
+      // Refresh sprints and auto-select the newly created sprint
+      if (project_id) {
+        const refreshedSprintsRaw = await getSprintsByProject(project_id);
+        const refreshedSprints = extractSprintsArray(refreshedSprintsRaw);
+        setProjectSprints(refreshedSprints);
+
+        const createdSprintMatch = refreshedSprints.find((sprint) => {
+          const sprintId = sprint?.id ? sprint.id.toString() : '';
+          const responseId = createdSprintId ? createdSprintId.toString() : '';
+          if (sprintId && responseId && sprintId === responseId) return true;
+
+          const sprintName = sprint?.name || sprint?.sprint_name || '';
+          const sprintStart = sprint?.start_date || sprint?.startDate || '';
+          const sprintEnd = sprint?.end_date || sprint?.endDate || '';
+          return sprintName === name && sprintStart === start_date && sprintEnd === end_date;
+        });
+
+        const sprintIdToSelect = createdSprintMatch?.id ? createdSprintMatch.id.toString() : (createdSprintId ? createdSprintId.toString() : '');
+        if (sprintIdToSelect) {
+          setSelectedSprintId(sprintIdToSelect);
+          await loadSprintData(sprintIdToSelect);
+        }
+      }
+
       if (onSprintCreated) onSprintCreated(); // Refresh sprints list
     } catch (error) {
       toast.error(getBackendErrorMessage(error, 'Failed to create sprint.'));
@@ -283,6 +393,80 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
   const getTaskStatusValue = (task) => {
     const receivedStatus = task?.status ?? task?.task_progress_status;
     return receivedStatus ?? 'pending';
+  };
+
+  const openEditModal = (sprint) => {
+    setEditingSprintId(sprint.id);
+    setEditFormData({
+      name: sprint.name || sprint.sprint_name || '',
+      description: sprint.goal || sprint.sprint_goal || sprint.description || ''
+    });
+    setShowEditModal(true);
+  };
+
+  const handleEditSprint = async () => {
+    if (!editingSprintId) return;
+    if (!editFormData.name.trim() && !editFormData.description.trim()) {
+      toast.error('Please enter at least a sprint name or description.');
+      return;
+    }
+
+    setIsEditingSprint(true);
+    try {
+      const payload = {};
+      if (editFormData.name.trim()) payload.name = editFormData.name.trim();
+      if (editFormData.description.trim()) payload.description = editFormData.description.trim();
+
+      await editSprint(editingSprintId, payload);
+      toast.success('Sprint updated successfully');
+      setShowEditModal(false);
+      setEditingSprintId(null);
+      setEditFormData({ name: '', description: '' });
+      
+      // Refresh sprint history
+      const updatedSprints = projectSprints.map(sprint => 
+        sprint.id === editingSprintId 
+          ? {
+              ...sprint,
+              name: payload.name || sprint.name,
+              goal: payload.description || sprint.goal,
+              description: payload.description || sprint.description
+            }
+          : sprint
+      );
+      setProjectSprints(updatedSprints);
+      setSprintHistory(updatedSprints.filter(isCompletedSprint));
+    } catch (error) {
+      toast.error(getBackendErrorMessage(error, 'Failed to update sprint.'));
+    } finally {
+      setIsEditingSprint(false);
+    }
+  };
+
+  const openDeleteConfirm = (sprint) => {
+    setDeletingSprintId(sprint.id);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleDeleteSprint = async () => {
+    if (!deletingSprintId) return;
+
+    setIsDeletingSprint(true);
+    try {
+      await deleteSprint(deletingSprintId);
+      toast.success('Sprint deleted successfully');
+      setShowDeleteConfirm(false);
+      setDeletingSprintId(null);
+
+      // Remove sprint from local state
+      const updatedSprints = projectSprints.filter(sprint => sprint.id !== deletingSprintId);
+      setProjectSprints(updatedSprints);
+      setSprintHistory(updatedSprints.filter(isCompletedSprint));
+    } catch (error) {
+      toast.error(getBackendErrorMessage(error, 'Failed to delete sprint.'));
+    } finally {
+      setIsDeletingSprint(false);
+    }
   };
 
   const handleTaskStatusChange = async (task, nextStatus) => {
@@ -610,24 +794,40 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
             ))}
           </select>
 
-          <button
-            onClick={() => {
-              setShowCreateModal(true);
-              // Pre-fill form with current selections
-              const workspaceId = localStorage.getItem('workspaceId');
-              setCreateFormData({
-                workspace_id: workspaceId || '',
-                project_id: selectedProjectId || '',
-                name: '',
-                goal: '',
-                start_date: '',
-                end_date: ''
-              });
-            }}
-            className="px-6 py-3 bg-sandTan text-nightBlue rounded-lg hover:bg-sandTanShadow transition-all shadow-lg"
-          >
-            + Create Sprint
-          </button>
+          {(() => {
+            const validation = canCreateNewSprint();
+            return (
+              <div>
+                <button
+                  onClick={() => {
+                    if (!validation.canCreate) {
+                      toast.error(validation.message);
+                      return;
+                    }
+                    setShowCreateModal(true);
+                    // Pre-fill form with current selections
+                    const workspaceId = localStorage.getItem('workspaceId');
+                    setCreateFormData({
+                      workspace_id: workspaceId || '',
+                      project_id: selectedProjectId || '',
+                      name: '',
+                      goal: '',
+                      start_date: '',
+                      end_date: ''
+                    });
+                  }}
+                  disabled={!validation.canCreate}
+                  className={`px-6 py-3 rounded-lg font-semibold transition-all shadow-lg ${
+                    validation.canCreate
+                      ? 'bg-sandTan text-nightBlue hover:bg-sandTanShadow cursor-pointer'
+                      : 'bg-sandTan/40 text-nightBlue/60 cursor-not-allowed'
+                  }`}
+                >
+                  + Create Sprint
+                </button>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -756,7 +956,7 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
                 <div className="space-y-4">
                   {stories.map((story, index) => {
                     const title = story.tasks || story.task_name || 'Untitled Task';
-                    const description = story.description || story.task_description || 'No description';
+                    const description = story.description || story.task_description || '';
                     const storyPoints = story.estimated_hours || story.story_points || story.points || 0;
                     const taskId = story.task_id || story.id;
                     const status = getTaskStatusValue(story);
@@ -767,7 +967,9 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
                         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                           <div className="flex-1">
                             <h3 className="text-textLight font-semibold mb-1">{title}</h3>
-                            <p className="text-textMuted text-sm mb-2">{description}</p>
+                            {description ? (
+                              <p className="text-textMuted text-sm mb-2">{description}</p>
+                            ) : null}
                             <div className="flex flex-wrap gap-3 text-sm text-textMuted">
                               <span>Estimated: {storyPoints}h</span>
                               <span>Skills: {story.skills_required || 'N/A'}</span>
@@ -825,6 +1027,7 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
                   const sprintName = sprint.name || sprint.sprint_name || `Sprint ${sprint.id}`;
                   const sprintStart = sprint.start_date || sprint.startDate || 'N/A';
                   const sprintEnd = sprint.end_date || sprint.endDate || 'N/A';
+                  const statusLabel = getSprintStatusLabel(sprint);
 
                   return (
                     <div key={sprint.id || index} className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-6">
@@ -835,10 +1038,24 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
                             {sprintStart} - {sprintEnd}
                           </p>
                         </div>
-                        <div className="flex items-center gap-6">
-                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor('Completed')}`}>
-                            Completed
+                        <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6">
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(statusLabel)}`}>
+                            {statusLabel}
                           </span>
+                          <div className="flex gap-2 w-full sm:w-auto">
+                            <button
+                              onClick={() => openEditModal(sprint)}
+                              className="flex-1 sm:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all text-sm font-medium"
+                            >
+                              ✏️ Edit
+                            </button>
+                            <button
+                              onClick={() => openDeleteConfirm(sprint)}
+                              className="flex-1 sm:flex-none px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all text-sm font-medium"
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -923,16 +1140,6 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
             <h3 className="text-xl font-bold text-textPrimary mb-4">Create New Sprint</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-textPrimary mb-1">Workspace ID</label>
-                <input
-                  type="number"
-                  value={createFormData.workspace_id}
-                  disabled
-                  className="w-full bg-surface border border-border rounded-lg p-3 text-textPrimary focus:outline-none focus:border-primary cursor-not-allowed"
-                  placeholder="Enter workspace ID"
-                />
-              </div>
-              <div>
                 <label className="block text-textPrimary mb-1">Project</label>
                 <select
                   value={createFormData.project_id}
@@ -980,7 +1187,12 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
                 <input
                   type="date"
                   value={createFormData.start_date}
-                  onChange={(e) => setCreateFormData({...createFormData, start_date: e.target.value})}
+                  onChange={(e) => {
+                    const startDate = e.target.value;
+                    const endDate = addDaysToDateString(startDate, 14); // Auto-set end date to 14 days later
+                    setCreateFormData({...createFormData, start_date: startDate, end_date: endDate});
+                  }}
+                  min={toInputDate(new Date())} // Today onwards
                   className="w-full bg-surface border border-border rounded-lg p-3 text-textPrimary focus:outline-none focus:border-primary"
                 />
               </div>
@@ -992,10 +1204,11 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
                   onChange={(e) => setCreateFormData({...createFormData, end_date: e.target.value})}
                   min={createFormData.start_date || undefined}
                   max={getMaxSprintEndDate(createFormData.start_date) || undefined}
-                  className="w-full bg-surface border border-border rounded-lg p-3 text-textPrimary focus:outline-none focus:border-primary"
+                  disabled={!createFormData.start_date}
+                  className="w-full bg-surface border border-border rounded-lg p-3 text-textPrimary focus:outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 <p className="mt-1 text-xs text-textSecondary">
-                  Sprint length cannot exceed {MAX_SPRINT_DURATION_DAYS} days.
+                  Auto-set to 2 weeks after start date. Sprint length cannot exceed {MAX_SPRINT_DURATION_DAYS} days.
                 </p>
               </div>
             </div>
@@ -1004,6 +1217,14 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
                 onClick={() => {
                   setShowCreateModal(false);
                   setProjectSprints([]); // Clear project sprints when modal closes
+                  setCreateFormData({
+                    workspace_id: '',
+                    project_id: '',
+                    name: '',
+                    goal: '',
+                    start_date: '',
+                    end_date: ''
+                  });
                 }}
                 className="flex-1 px-4 py-2 border border-border text-textSecondary rounded-lg hover:bg-surface transition-all"
               >
@@ -1014,6 +1235,95 @@ export default function SprintManagement({ sprints, selectedSprintId, setSelecte
                 className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primaryDark transition-all"
               >
                 Create Sprint
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Edit Sprint Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white border border-border rounded-2xl p-4 w-full max-w-sm mx-4 max-h-[90vh] overflow-y-auto shadow-xl"
+          >
+            <h3 className="text-xl font-bold text-textPrimary mb-4">Edit Sprint</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-textPrimary mb-1">Sprint Name</label>
+                <input
+                  type="text"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({...editFormData, name: e.target.value})}
+                  className="w-full bg-surface border border-border rounded-lg p-3 text-textPrimary focus:outline-none focus:border-primary"
+                  placeholder="Enter sprint name"
+                />
+              </div>
+              <div>
+                <label className="block text-textPrimary mb-1">Sprint Goal</label>
+                <textarea
+                  value={editFormData.description}
+                  onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
+                  className="w-full bg-surface border border-border rounded-lg p-3 text-textPrimary focus:outline-none focus:border-primary h-20 resize-none"
+                  placeholder="Enter sprint goal"
+                />
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4 mt-6">
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingSprintId(null);
+                  setEditFormData({ name: '', description: '' });
+                }}
+                className="flex-1 px-4 py-2 border border-border text-textSecondary rounded-lg hover:bg-surface transition-all"
+                disabled={isEditingSprint}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditSprint}
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primaryDark transition-all disabled:opacity-60"
+                disabled={isEditingSprint}
+              >
+                {isEditingSprint ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Delete Sprint Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white border border-border rounded-2xl p-6 w-full max-w-sm mx-4 shadow-xl"
+          >
+            <h3 className="text-xl font-bold text-textPrimary mb-4">Delete Sprint</h3>
+            <p className="text-textSecondary mb-6">
+              Are you sure you want to delete this sprint? This action cannot be undone.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setDeletingSprintId(null);
+                }}
+                className="flex-1 px-4 py-2 border border-border text-textSecondary rounded-lg hover:bg-surface transition-all"
+                disabled={isDeletingSprint}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteSprint}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all disabled:opacity-60"
+                disabled={isDeletingSprint}
+              >
+                {isDeletingSprint ? 'Deleting...' : 'Delete Sprint'}
               </button>
             </div>
           </motion.div>

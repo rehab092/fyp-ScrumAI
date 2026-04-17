@@ -6,7 +6,7 @@ import MetricCard from "../common/MetricCard";
 
 export default function BacklogManager() {
   const { user } = useAuth();
-  const [mode, setMode] = useState("view"); // 'view', 'add', 'bulk', 'edit', 'tasks'
+  const [mode, setMode] = useState("view"); // 'view', 'add', 'bulk', 'edit'
   const [userStories, setUserStories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedStory, setSelectedStory] = useState(null);
@@ -40,6 +40,8 @@ export default function BacklogManager() {
   const [successMessage, setSuccessMessage] = useState("");
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [projectForm, setProjectForm] = useState({ name: "", description: "" });
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [addingStories, setAddingStories] = useState(false);
 
   // Fetch projects then user stories grouped by project on component mount
   useEffect(() => {
@@ -327,9 +329,6 @@ export default function BacklogManager() {
   
         // Call backend API
         const response = await apiRequestFormData(LOGIN_ENDPOINTS.userStories.upload, formData);
-        
-        // Refresh stories list from backend
-        await fetchProjects();
   
         setNewStory({ 
           owner_id: "", 
@@ -343,6 +342,11 @@ export default function BacklogManager() {
         setMode("view");
         setSuccessMessage(`Success! Created ${response.stories_created} user story and ${response.tasks_created} tasks.`);
         setTimeout(() => setSuccessMessage(""), 5000);
+
+        // Refresh data without blocking success/reset UI.
+        fetchProjects().catch((refreshErr) => {
+          console.warn("Projects refresh failed after add story:", refreshErr);
+        });
       } catch (err) {
         setError("Failed to add story: " + (err.message || "Please check your connection and try again."));
       } finally {
@@ -350,7 +354,9 @@ export default function BacklogManager() {
       }
     };
 
- const handleBulkAdd = async () => {
+ const handleBulkAdd = async (e) => {
+   e.preventDefault();
+
     if (!bulkFormData.project_id.trim()) {
       setError("Please select a project");
       return;
@@ -361,7 +367,7 @@ export default function BacklogManager() {
       return;
     }
 
-    setLoading(true);
+    setAddingStories(true);
     setError("");
     setSuccessMessage("");
 
@@ -369,14 +375,7 @@ export default function BacklogManager() {
       // Create FormData - backend expects stories_text as multiline text
       const formData = new FormData();
       // try to include owner_id if available (some setups provide owner via separate endpoint/session)
-      let ownerId = localStorage.getItem('ownerId') || (() => {
-        try {
-          const su = JSON.parse(localStorage.getItem('scrumai_user'));
-          return su && (su.owner_id || su.id || su.ownerId) ? (su.owner_id || su.id || su.ownerId) : null;
-        } catch (e) {
-          return null;
-        }
-      })();
+      const ownerId = resolveOwnerId();
 
       if (ownerId) formData.append('owner_id', ownerId);
       
@@ -390,9 +389,6 @@ export default function BacklogManager() {
 
       // Call backend API
       const response = await apiRequestFormData(LOGIN_ENDPOINTS.userStories.upload, formData);
-      
-      // Refresh stories list from backend
-      await fetchProjects();
 
       setBulkStoriesText("");
       setBulkFormData({
@@ -405,10 +401,15 @@ export default function BacklogManager() {
       setMode("view");
       setSuccessMessage(`Success! Created ${response.stories_created} user stories and ${response.tasks_created} tasks.`);
       setTimeout(() => setSuccessMessage(""), 5000);
+
+      // Refresh data without blocking success/reset UI.
+      fetchProjects().catch((refreshErr) => {
+        console.warn("Projects refresh failed after bulk add:", refreshErr);
+      });
     } catch (err) {
       setError("Failed to add stories: " + (err.message || "Please check your connection and try again."));
     } finally {
-      setLoading(false);
+      setAddingStories(false);
     }
   };
 
@@ -541,6 +542,60 @@ export default function BacklogManager() {
     setEditingTask(null);
   };
 
+  const resolveOwnerId = () => {
+    const directOwnerId = localStorage.getItem("ownerId");
+    if (directOwnerId) return directOwnerId;
+
+    try {
+      const savedUser = JSON.parse(localStorage.getItem("scrumai_user") || "{}");
+      return savedUser.owner_id || savedUser.id || savedUser.ownerId || null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const handleCreateProject = async (e) => {
+    e.preventDefault();
+    setError("");
+
+    if (!projectForm.name || !projectForm.name.trim()) {
+      setError("Project name is required");
+      return;
+    }
+
+    setCreatingProject(true);
+    try {
+      const ownerId = resolveOwnerId();
+      const payload = {
+        name: projectForm.name.trim(),
+        description: projectForm.description || "",
+      };
+
+      if (ownerId) payload.owner_id = ownerId;
+
+      const resp = await apiRequest(LOGIN_ENDPOINTS.projects.create, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      const createdProjectName = resp?.name || payload.name;
+      setShowProjectModal(false);
+      setProjectForm({ name: "", description: "" });
+      setSuccessMessage(`Project "${createdProjectName}" created successfully.`);
+      setTimeout(() => setSuccessMessage(""), 4000);
+
+      // Refresh data without blocking successful UI feedback.
+      fetchProjects().catch((refreshErr) => {
+        console.warn("Projects refresh failed after create:", refreshErr);
+      });
+    } catch (err) {
+      console.error("Create project failed", err);
+      setError("Failed to create project: " + (err.message || "Please try again"));
+    } finally {
+      setCreatingProject(false);
+    }
+  };
+
   // Delete task from backend
   const handleDeleteTask = async (taskId) => {
     if (!window.confirm("Are you sure you want to delete this task?")) {
@@ -573,59 +628,50 @@ export default function BacklogManager() {
   return (
     <div className="max-w-7xl mx-auto">
       {/* Mode Selector */}
-      <div className="flex flex-wrap gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-8">
         <button
+          type="button"
           onClick={() => setMode("view")}
-          className={`px-6 py-3 rounded-lg transition-all ${
+          className={`w-full px-4 sm:px-6 py-3 rounded-lg transition-all font-semibold text-sm sm:text-base ${
             mode === "view"
               ? "bg-sandTan text-nightBlue shadow-lg"
-              : "border border-sandTan text-sandTan hover:bg-sandTan hover:text-nightBlue"
+              : "border-2 border-sandTan text-sandTan hover:bg-sandTan hover:text-nightBlue"
           }`}
         >
           📋 View Backlog
         </button>
         <button
+          type="button"
           onClick={() => setMode("bulk")}
-          className={`px-6 py-3 rounded-lg transition-all ${
+          className={`w-full px-4 sm:px-6 py-3 rounded-lg transition-all font-semibold text-sm sm:text-base ${
             mode === "bulk"
               ? "bg-sandTan text-nightBlue shadow-lg"
-              : "border border-sandTan text-sandTan hover:bg-sandTan hover:text-nightBlue"
+              : "border-2 border-sandTan text-sandTan hover:bg-sandTan hover:text-nightBlue"
           }`}
         >
           📝 Add User Stories
         </button>
         <button
+          type="button"
           onClick={() => setShowProjectModal(true)}
-          className={`px-6 py-3 rounded-lg transition-all ${
+          className={`w-full px-4 sm:px-6 py-3 rounded-lg transition-all font-semibold text-sm sm:text-base ${
             mode === "createProject"
               ? "bg-sandTan text-nightBlue shadow-lg"
-              : "border border-sandTan text-sandTan hover:bg-sandTan hover:text-nightBlue"
+              : "border-2 border-sandTan text-sandTan hover:bg-sandTan hover:text-nightBlue"
           }`}
         >
           ➕ Create Project
-        </button>
-        <button
-          onClick={() => {
-            setMode("tasks");
-            fetchAllTasks();
-          }}
-          className={`px-6 py-3 rounded-lg transition-all ${
-            mode === "tasks"
-              ? "bg-sandTan text-nightBlue shadow-lg"
-              : "border border-sandTan text-sandTan hover:bg-sandTan hover:text-nightBlue"
-          }`}
-        >
-          ✓ View Tasks
         </button>
       </div>
 
       {/* Create Project Modal */}
       {showProjectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-nightBlue/80 backdrop-blur-sm">
-          <motion.div
+          <motion.form
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.3 }}
+            onSubmit={handleCreateProject}
             className="w-full max-w-md bg-gradient-to-br from-nightBlueShadow to-nightBlue border border-sandTan/40 rounded-2xl p-8 shadow-2xl"
           >
             <h3 className="text-2xl font-bold text-sandTan mb-6">Create New Project</h3>
@@ -654,64 +700,27 @@ export default function BacklogManager() {
               </div>
             </div>
 
-            <div className="flex gap-3 justify-end">
+            <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
               <button
+                type="button"
                 onClick={() => { setShowProjectModal(false); setProjectForm({ name: "", description: "" }); }}
-                className="px-5 py-2 border border-sandTan text-sandTan rounded-lg hover:bg-sandTan/10 transition-all font-medium"
+                className="w-full sm:w-auto px-5 py-2 border-2 border-sandTan text-sandTan rounded-lg hover:bg-sandTan/10 transition-all font-medium"
               >
                 Cancel
               </button>
               <button
-                onClick={async () => {
-                  // call handler inline to keep patch small
-                  setError("");
-                  if (!projectForm.name || !projectForm.name.trim()) {
-                    setError('Project name is required');
-                    return;
-                  }
-                  setLoading(true);
-                  try {
-                    // resolve owner id
-                    const storedOwnerId = localStorage.getItem('ownerId') || (() => {
-                      try {
-                        const su = JSON.parse(localStorage.getItem('scrumai_user'));
-                        return su && (su.owner_id || su.id || su.ownerId) ? (su.owner_id || su.id || su.ownerId) : null;
-                      } catch (e) { return null; }
-                    })();
-                    const ownerId = storedOwnerId || null;
-
-                    const payload = { name: projectForm.name.trim(), description: projectForm.description || '' };
-                    if (ownerId) payload.owner_id = ownerId;
-
-                    const resp = await apiRequest(LOGIN_ENDPOINTS.projects.create, {
-                      method: 'POST',
-                      body: JSON.stringify(payload),
-                    });
-
-                    // refresh projects list
-                    await fetchProjects();
-                    setShowProjectModal(false);
-                    setProjectForm({ name: '', description: '' });
-                    setSuccessMessage(`Project "${resp.name || projectForm.name}" created successfully.`);
-                    setTimeout(() => setSuccessMessage(''), 4000);
-                  } catch (err) {
-                    console.error('Create project failed', err);
-                    setError('Failed to create project: ' + (err.message || 'Please try again'));
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-                disabled={loading || !projectForm.name.trim()}
-                className={`px-6 py-2 rounded-lg font-semibold transition-all ${
-                  !loading && projectForm.name.trim()
+                type="submit"
+                disabled={creatingProject || !projectForm.name.trim()}
+                className={`w-full sm:w-auto px-6 py-2 rounded-lg font-semibold transition-all ${
+                  !creatingProject && projectForm.name.trim()
                     ? "bg-sandTan text-nightBlue hover:bg-sandTanShadow shadow-lg"
-                    : "bg-textMuted text-nightBlue/50 cursor-not-allowed"
+                    : "bg-sandTan/40 text-nightBlue/80 cursor-not-allowed"
                 }`}
               >
-                {loading ? "Creating..." : "Create Project"}
+                {creatingProject ? "Creating..." : "Create Project"}
               </button>
             </div>
-          </motion.div>
+          </motion.form>
         </div>
       )}
 
@@ -849,10 +858,11 @@ export default function BacklogManager() {
       )}
 
       {mode === "bulk" && (
-        <motion.div
+        <motion.form
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
+          onSubmit={handleBulkAdd}
           className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-8"
         >
           <h2 className="text-2xl font-bold text-sandTan mb-6">Add User Stories</h2>
@@ -896,26 +906,27 @@ As an Admin, I want to generate monthly reports, so that I can track system perf
             />
           </div>
 
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <button
-              onClick={handleBulkAdd}
-              disabled={loading || !bulkFormData.project_id.trim() || !bulkStoriesText.trim()}
-              className={`px-6 py-3 rounded-lg font-medium transition-all ${
-                bulkFormData.project_id.trim() && bulkStoriesText.trim() && !loading
+              type="submit"
+              disabled={addingStories || !bulkFormData.project_id.trim() || !bulkStoriesText.trim()}
+              className={`w-full sm:w-auto px-6 py-3 rounded-lg font-medium transition-all ${
+                bulkFormData.project_id.trim() && bulkStoriesText.trim() && !addingStories
                   ? "bg-sandTan text-nightBlue hover:bg-sandTanShadow"
-                  : "bg-gray-600 text-gray-300 cursor-not-allowed"
+                  : "bg-sandTan/40 text-nightBlue/80 cursor-not-allowed"
               }`}
             >
-              {loading ? "Adding..." : "Add All Stories"}
+              {addingStories ? "Adding..." : "Add All Stories"}
             </button>
             <button
+              type="button"
               onClick={() => setMode("view")}
-              className="border border-sandTan text-sandTan px-6 py-3 rounded-lg hover:bg-sandTan hover:text-nightBlue transition-all"
+              className="w-full sm:w-auto border-2 border-sandTan text-sandTan px-6 py-3 rounded-lg hover:bg-sandTan hover:text-nightBlue transition-all"
             >
               Cancel
             </button>
           </div>
-        </motion.div>
+        </motion.form>
       )}
 
       {mode === "edit" && selectedStory && (
@@ -1001,24 +1012,26 @@ As an Admin, I want to generate monthly reports, so that I can track system perf
             </div>
           </div>
 
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <button
+              type="button"
               onClick={handleUpdateStory}
               disabled={loading || !selectedStory.role.trim() || !selectedStory.goal.trim() || !selectedStory.benefit.trim()}
-              className={`px-6 py-3 rounded-lg font-medium transition-all ${
+              className={`w-full sm:w-auto px-6 py-3 rounded-lg font-medium transition-all ${
                 selectedStory.role.trim() && selectedStory.goal.trim() && selectedStory.benefit.trim() && !loading
                   ? "bg-sandTan text-nightBlue hover:bg-sandTanShadow"
-                  : "bg-gray-600 text-gray-300 cursor-not-allowed"
+                  : "bg-sandTan/40 text-nightBlue/80 cursor-not-allowed"
               }`}
             >
               {loading ? "Updating..." : "Update Story"}
             </button>
             <button
+              type="button"
               onClick={() => {
                 setSelectedStory(null);
                 setMode("view");
               }}
-              className="border border-sandTan text-sandTan px-6 py-3 rounded-lg hover:bg-sandTan hover:text-nightBlue transition-all"
+              className="w-full sm:w-auto border-2 border-sandTan text-sandTan px-6 py-3 rounded-lg hover:bg-sandTan hover:text-nightBlue transition-all"
             >
               Cancel
             </button>
@@ -1026,121 +1039,6 @@ As an Admin, I want to generate monthly reports, so that I can track system perf
         </motion.div>
       )}
 
-      {mode === "tasks" && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="space-y-6"
-        >
-          {/* Tasks View */}
-          <div className="bg-surface border border-border rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-textPrimary">All Tasks & Subtasks</h2>
-              <div className="flex items-center gap-3">
-                <input
-                  type="text"
-                  placeholder="Search tasks, subtasks..."
-                  value={taskSearchQuery}
-                  onChange={(e) => setTaskSearchQuery(e.target.value)}
-                  className="bg-nightBlue border border-sandTan/30 rounded-lg p-2 text-textLight placeholder-textMuted focus:outline-none"
-                />
-                {taskSearchQuery && (
-                  <button
-                    onClick={() => setTaskSearchQuery("")}
-                    className="px-3 py-1 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {loading ? (
-              <div className="flex justify-center items-center py-12">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-              </div>
-            ) : Object.keys(tasksData).length === 0 ? (
-              <div className="text-center py-12 text-textMuted">
-                <p>No tasks found. Create some user stories first.</p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {Object.keys(tasksData).map((storyId) => {
-                  // Find story details
-                  let storyDetails = null;
-                  for (const projectId in groupedStories) {
-                    const story = groupedStories[projectId].find(s => String(s.id) === String(storyId));
-                    if (story) {
-                      storyDetails = story;
-                      break;
-                    }
-                  }
-
-                  const tasks = tasksData[storyId] || [];
-                  
-                  // Filter tasks by search query
-                  const filteredTasks = tasks.filter(task => {
-                    const q = (taskSearchQuery || "").toLowerCase();
-                    if (!q) return true;
-                    const taskText = `${task.tasks || ""} ${task.subtasks || ""}`.toLowerCase();
-                    return taskText.includes(q);
-                  });
-
-                  if (filteredTasks.length === 0 && taskSearchQuery) return null;
-
-                  return (
-                    <div key={storyId} className="border border-border/50 rounded-xl overflow-hidden">
-                      {/* Story Header */}
-                      <div className="bg-gradient-to-r from-primary/20 to-primary/10 border-b border-border p-4">
-                        <p className="text-textPrimary text-base mb-2">
-                          As a <span className="text-primary font-semibold">{storyDetails?.role || 'User'}</span>, 
-                          I want to <span className="text-primary font-semibold">{storyDetails?.goal || '...'}</span>, 
-                          so that <span className="text-primary font-semibold">{storyDetails?.benefit || '...'}</span>.
-                        </p>
-                        <div className="flex gap-3 text-sm">
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(storyDetails?.priority)}`}>
-                            {storyDetails?.priority}
-                          </span>
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(storyDetails?.status)}`}>
-                            {storyDetails?.status}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Tasks List */}
-                      <div className="p-4 space-y-3">
-                        {filteredTasks.length === 0 ? (
-                          <p className="text-textMuted text-sm">No tasks for this story</p>
-                        ) : (
-                          filteredTasks.map((task, idx) => (
-                            <motion.div
-                              key={task.task_id || idx}
-                              initial={{ opacity: 0, x: -10 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ duration: 0.3, delay: idx * 0.05 }}
-                              className="bg-nightBlue/50 border border-border/30 rounded-lg p-3"
-                            >
-                              <div className="flex flex-col gap-2">
-                                <p className="text-textPrimary font-medium text-sm">{task.tasks || 'Unnamed Task'}</p>
-                                {task.subtasks && (
-                                  <p className="text-textSecondary text-xs ml-4 pl-3 border-l border-sandTan/30">
-                                    📌 {task.subtasks}
-                                  </p>
-                                )}
-                              </div>
-                            </motion.div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </motion.div>
-      )}
     </div>
   );
 }
