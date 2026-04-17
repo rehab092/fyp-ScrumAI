@@ -121,6 +121,10 @@ export const LOGIN_ENDPOINTS = {
     // Helper endpoints
     getProjectsByWorkspace: `${MODULE2_BASE_URL}projects/by-workspace/`, // Get all projects for workspace (GET)
     getAvailableSprints: `${MODULE2_BASE_URL}sprints/available/`, // Get all sprints with tasks (GET with ?project_id=&limit=)
+    // Project Analytics Endpoints
+    getProjectStats: (projectId) => `${MODULE2_BASE_URL}project-analytics/${projectId}/stats/`, // Get stats for a project (GET)
+    getProjectStories: (projectId) => `${MODULE2_BASE_URL}project-analytics/${projectId}/stories/`, // Get user stories for a project (GET)
+    getAllProjectsAnalytics: `${MODULE2_BASE_URL}project-analytics/all/`, // Get analytics for all projects (GET)
     // Testing endpoints
     testSprintAssignment: `${MODULE2_BASE_URL}test/sprint-assignment/`, // [TESTING ONLY] Fetch sprint and task data from SprintItem (GET with ?sprint_id=)
   },

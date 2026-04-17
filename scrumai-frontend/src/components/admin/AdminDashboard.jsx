@@ -1,83 +1,135 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from "recharts";
 import { LOGIN_ENDPOINTS, apiRequest } from "../../config/api";
 
-export default function AdminDashboard({ workspaceInfo, onNavigateToTeam }) {
+export default function AdminDashboard({ workspaceInfo, onNavigateToTeam, onNavigateToAnalytics }) {
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
+  const [userStories, setUserStories] = useState([]);
   const [stats, setStats] = useState({
-    totalMembers: 0,
-    scrumMasters: 0,
-    productOwners: 0,
-    teamMembers: 0,
-    available: 0,
-    highLoad: 0,
-    overloaded: 0
+    total: 0,
+    ready: 0,
+    inProgress: 0,
+    completed: 0,
+    done: 0
   });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchProjects = async () => {
       try {
         setLoading(true);
         const workspaceId = localStorage.getItem("workspaceId");
         
-        // Fetch all data in parallel: team members, scrum masters, and product owners
-        const [teamResponse, scrumMastersResponse, productOwnersResponse] = await Promise.all([
-          fetch(LOGIN_ENDPOINTS.team.getAll, {
-            method: "GET",
-            headers: { "Content-Type": "application/json", "Workspace-ID": workspaceId },
-          }),
-          fetch(LOGIN_ENDPOINTS.management.getScrumMasters, {
-            method: "GET",
-            headers: { "Content-Type": "application/json", "Workspace-ID": workspaceId },
-          }),
-          fetch(LOGIN_ENDPOINTS.management.getProductOwners, {
-            method: "GET",
-            headers: { "Content-Type": "application/json", "Workspace-ID": workspaceId },
-          }),
-        ]);
-
-        // Parse responses
-        const teamData = teamResponse.ok ? await teamResponse.json() : [];
-        const scrumMastersData = scrumMastersResponse.ok ? await scrumMastersResponse.json() : {};
-        const productOwnersData = productOwnersResponse.ok ? await productOwnersResponse.json() : {};
-
-        // Extract arrays (handle both direct array and nested object formats)
-        const membersArray = Array.isArray(teamData) ? teamData : (teamData.data || teamData.members || []);
-        const scrumMastersArray = scrumMastersData.scrumMasters || scrumMastersData.data || [];
-        const productOwnersArray = productOwnersData.productOwners || productOwnersData.data || [];
-
-        // Convert to arrays if they're objects
-        const smArray = Array.isArray(scrumMastersArray) ? scrumMastersArray : Object.values(scrumMastersArray || {});
-        const poArray = Array.isArray(productOwnersArray) ? productOwnersArray : Object.values(productOwnersArray || {});
-
-        // Calculate stats
-        const teamMembers = membersArray.length; // Developers
-        const scrumMasters = smArray.length;
-        const productOwners = poArray.length;
-
-        // Calculate status counts from developers
-        const available = membersArray.filter(m => m.status === 'available' || m.status === 'active').length;
-        const highLoad = membersArray.filter(m => m.status === 'high_load' || m.status === 'high').length;
-        const overloaded = membersArray.filter(m => m.status === 'overloaded').length;
-
-        setStats({
-          totalMembers: teamMembers + scrumMasters + productOwners,
-          scrumMasters,
-          productOwners,
-          teamMembers,
-          available,
-          highLoad,
-          overloaded
+        console.log("Fetching projects for workspace:", workspaceId);
+        
+        // Fetch all projects for the workspace using the correct endpoint
+        const projectsResponse = await fetch(LOGIN_ENDPOINTS.taskAllocation.getProjectsByWorkspace, {
+          method: "GET",
+          headers: { 
+            "Content-Type": "application/json", 
+            "Workspace-ID": workspaceId 
+          },
         });
+
+        console.log("Projects API Response Status:", projectsResponse.status);
+        
+        const projectsData = projectsResponse.ok ? await projectsResponse.json() : [];
+        console.log("Raw projects data:", projectsData);
+        
+        let projectsArray = [];
+        
+        // Handle different response formats
+        if (Array.isArray(projectsData)) {
+          projectsArray = projectsData;
+        } else if (projectsData.data && Array.isArray(projectsData.data)) {
+          projectsArray = projectsData.data;
+        } else if (projectsData.projects && Array.isArray(projectsData.projects)) {
+          projectsArray = projectsData.projects;
+        } else if (projectsData.backlogs && Array.isArray(projectsData.backlogs)) {
+          projectsArray = projectsData.backlogs;
+        }
+        
+        // Log first project structure to see field names
+        if (projectsArray.length > 0) {
+          console.log("First project structure:", projectsArray[0]);
+          console.log("Available fields:", Object.keys(projectsArray[0]));
+        }
+        
+        console.log("Processed projects array:", projectsArray);
+        console.log("Total projects found:", projectsArray.length);
+        
+        setProjects(projectsArray);
+        
+        // Set first project as default if available
+        if (projectsArray.length > 0) {
+          const firstProjectId = projectsArray[0].id || projectsArray[0].backlog_id || projectsArray[0].project_id;
+          console.log("Setting selected project to:", firstProjectId);
+          setSelectedProjectId(firstProjectId);
+        } else {
+          console.warn("No projects available for this workspace");
+        }
       } catch (err) {
-        console.error('Error fetching stats:', err);
+        console.error('Error fetching projects:', err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchStats();
+    fetchProjects();
   }, []);
+
+  // Fetch user stories when project changes
+  useEffect(() => {
+    const fetchUserStories = async () => {
+      if (!selectedProjectId) return;
+      
+      try {
+        const workspaceId = localStorage.getItem("workspaceId");
+        
+        console.log("Fetching project stats for project:", selectedProjectId);
+        
+        // Fetch project stats using the new analytics endpoint
+        const statsResponse = await fetch(
+          LOGIN_ENDPOINTS.taskAllocation.getProjectStats(selectedProjectId),
+          {
+            method: "GET",
+            headers: { 
+              "Content-Type": "application/json", 
+              "Workspace-ID": workspaceId 
+            },
+          }
+        );
+
+        const statsData = statsResponse.ok ? await statsResponse.json() : { data: {} };
+        console.log("Project stats response:", statsData);
+        
+        if (statsData.success && statsData.data) {
+          const data = statsData.data;
+          console.log("Setting stats from API:", data);
+          setStats({
+            total: data.total || 0,
+            ready: data.ready || 0,
+            inProgress: data.in_progress || 0,
+            completed: data.completed || 0,
+            done: data.done || 0
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching project stats:', err);
+        setStats({
+          total: 0,
+          ready: 0,
+          inProgress: 0,
+          completed: 0,
+          done: 0
+        });
+      }
+    };
+
+    fetchUserStories();
+  }, [selectedProjectId]);
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -95,123 +147,218 @@ export default function AdminDashboard({ workspaceInfo, onNavigateToTeam }) {
           <p className="text-white/80 text-lg">
             {workspaceInfo?.workspaceName || "Workspace"} • {workspaceInfo?.companyName || "Company"}
           </p>
-          <p className="text-white/70 text-sm mt-1">Workspace Admin</p>
+          <p className="text-white/70 text-sm mt-1">Project Progress Overview</p>
         </div>
       </motion.div>
 
-      {/* Summary Cards */}
+      {/* Project Selector */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, delay: 0.2 }}
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
+        className="mb-8"
       >
-        <div className="bg-white border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-primary/20 to-primary/10 rounded-xl flex items-center justify-center">
-              <span className="text-2xl">👥</span>
-            </div>
-            <div className="text-3xl font-bold text-primary">{loading ? "..." : stats.totalMembers}</div>
-          </div>
-          <h3 className="text-textSecondary text-sm font-medium">Total Team Members</h3>
-        </div>
-
-        <div className="bg-white border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-secondary/20 to-secondary/10 rounded-xl flex items-center justify-center">
-              <span className="text-2xl">🎯</span>
-            </div>
-            <div className="text-3xl font-bold text-secondary">{loading ? "..." : stats.scrumMasters}</div>
-          </div>
-          <h3 className="text-textSecondary text-sm font-medium">Scrum Masters</h3>
-        </div>
-
-        <div className="bg-white border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-accent/20 to-accent/10 rounded-xl flex items-center justify-center">
-              <span className="text-2xl">📋</span>
-            </div>
-            <div className="text-3xl font-bold text-accent">{loading ? "..." : stats.productOwners}</div>
-          </div>
-          <h3 className="text-textSecondary text-sm font-medium">Product Owners</h3>
-        </div>
-
-        <div className="bg-white border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-success/20 to-success/10 rounded-xl flex items-center justify-center">
-              <span className="text-2xl">💻</span>
-            </div>
-            <div className="text-3xl font-bold text-success">{loading ? "..." : stats.teamMembers}</div>
-          </div>
-          <h3 className="text-textSecondary text-sm font-medium">Developers</h3>
-        </div>
+        <label className="block text-textPrimary font-semibold mb-3">Select Project</label>
+        <select
+          value={selectedProjectId || ""}
+          onChange={(e) => setSelectedProjectId(e.target.value)}
+          className="w-full px-4 py-3 border-2 border-primary rounded-xl bg-white text-textPrimary font-medium focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="">
+            {projects.length === 0 ? "Loading projects..." : "Select a project"}
+          </option>
+          {projects.map((project) => {
+            const projectId = project.id || project.backlog_id || project.project_id;
+            const projectName = project.name || project.title || project.project_name || project.backlog_name || `Project ${projectId}`;
+            return (
+              <option key={projectId} value={projectId}>
+                {projectName}
+              </option>
+            );
+          })}
+        </select>
       </motion.div>
 
-      {/* Team Health Status */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.4 }}
-        className="bg-white border border-border rounded-2xl p-6 shadow-lg mb-8"
-      >
-        <h2 className="text-xl font-bold text-textPrimary mb-6">Team Health Overview</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-green-600 font-semibold">Available</span>
-              <span className="text-2xl font-bold text-green-600">{loading ? "..." : stats.available}</span>
-            </div>
-            <p className="text-textMuted text-xs">Members ready for tasks</p>
-          </div>
-          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-yellow-600 font-semibold">High Load</span>
-              <span className="text-2xl font-bold text-yellow-600">{loading ? "..." : stats.highLoad}</span>
-            </div>
-            <p className="text-textMuted text-xs">Members at capacity</p>
-          </div>
-          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-red-600 font-semibold">Overloaded</span>
-              <span className="text-2xl font-bold text-red-600">{loading ? "..." : stats.overloaded}</span>
-            </div>
-            <p className="text-textMuted text-xs">Members need relief</p>
-          </div>
-        </div>
-      </motion.div>
+      {/* Empty State or Content */}
+      {projects.length === 0 && !loading ? (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.3 }}
+          className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-8 text-center"
+        >
+          <p className="text-yellow-800 font-semibold text-lg mb-2">📦 No Projects Found</p>
+          <p className="text-yellow-700">Please create a project first to see project progress.</p>
+        </motion.div>
+      ) : null}
 
-      {/* Quick Actions */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.6 }}
-        className="bg-gradient-to-br from-surface to-surfaceLight border border-border rounded-2xl p-6 shadow-lg"
-      >
-        <h2 className="text-xl font-bold text-textPrimary mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <button 
-            onClick={() => onNavigateToTeam && onNavigateToTeam()}
-            className="bg-gradient-to-r from-primary to-primaryDark text-white px-6 py-4 rounded-xl hover:shadow-lg transition-all font-medium flex items-center justify-center gap-2"
-          >
-            <span>➕</span>
-            <span>Add Team Member</span>
-          </button>
-          <button 
-            onClick={() => onNavigateToTeam && onNavigateToTeam()}
-            className="bg-gradient-to-r from-secondary to-secondaryDark text-white px-6 py-4 rounded-xl hover:shadow-lg transition-all font-medium flex items-center justify-center gap-2"
-          >
-            <span>🎯</span>
-            <span>Add Scrum Master</span>
-          </button>
-          <button 
-            onClick={() => onNavigateToTeam && onNavigateToTeam()}
-            className="bg-gradient-to-r from-accent to-accentDark text-white px-6 py-4 rounded-xl hover:shadow-lg transition-all font-medium flex items-center justify-center gap-2"
-          >
-            <span>📋</span>
-            <span>Add Product Owner</span>
-          </button>
-        </div>
-      </motion.div>
+      {/* Project Stats */}
+      {selectedProjectId && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.3 }}
+          className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8"
+        >
+          <div className="bg-white border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all">
+            <div className="flex items-center justify-between mb-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-primary/20 to-primary/10 rounded-xl flex items-center justify-center">
+                <span className="text-2xl">📋</span>
+              </div>
+              <div className="text-3xl font-bold text-primary">{stats.total}</div>
+            </div>
+            <h3 className="text-textSecondary text-sm font-medium">Total Stories</h3>
+          </div>
+
+          <div className="bg-white border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all">
+            <div className="flex items-center justify-between mb-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500/20 to-blue-500/10 rounded-xl flex items-center justify-center">
+                <span className="text-2xl">⏳</span>
+              </div>
+              <div className="text-3xl font-bold text-blue-600">{stats.inProgress}</div>
+            </div>
+            <h3 className="text-textSecondary text-sm font-medium">In Progress</h3>
+          </div>
+
+          <div className="bg-white border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all">
+            <div className="flex items-center justify-between mb-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-purple-500/20 to-purple-500/10 rounded-xl flex items-center justify-center">
+                <span className="text-2xl">📝</span>
+              </div>
+              <div className="text-3xl font-bold text-purple-600">{stats.ready}</div>
+            </div>
+            <h3 className="text-textSecondary text-sm font-medium">Ready</h3>
+          </div>
+
+          <div className="bg-white border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all">
+            <div className="flex items-center justify-between mb-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-yellow-500/20 to-yellow-500/10 rounded-xl flex items-center justify-center">
+                <span className="text-2xl">✔️</span>
+              </div>
+              <div className="text-3xl font-bold text-yellow-600">{stats.completed}</div>
+            </div>
+            <h3 className="text-textSecondary text-sm font-medium">Completed</h3>
+          </div>
+
+          <div className="bg-white border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all">
+            <div className="flex items-center justify-between mb-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-green-500/20 to-green-500/10 rounded-xl flex items-center justify-center">
+                <span className="text-2xl">✅</span>
+              </div>
+              <div className="text-3xl font-bold text-green-600">{stats.done}</div>
+            </div>
+            <h3 className="text-textSecondary text-sm font-medium">Done</h3>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Project Status Pie Chart */}
+      {selectedProjectId && stats.total > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.4 }}
+          className="bg-white border border-border rounded-2xl p-6 shadow-lg"
+        >
+          <h2 className="text-xl font-bold text-textPrimary mb-6">Story Status Distribution</h2>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+            {/* Pie Chart */}
+            <div className="flex justify-center">
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: "Ready", value: stats.ready, fill: "#A855F7" },
+                      { name: "In Progress", value: stats.inProgress, fill: "#3B82F6" },
+                      { name: "Completed", value: stats.completed, fill: "#FBBF24" },
+                      { name: "Done", value: stats.done, fill: "#10B981" }
+                    ].filter(item => item.value > 0)}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                    outerRadius={100}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    <Cell fill="#A855F7" />
+                    <Cell fill="#3B82F6" />
+                    <Cell fill="#FBBF24" />
+                    <Cell fill="#10B981" />
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value) => [`${value} items`, 'Count']}
+                    contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '8px' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Stats Summary */}
+            <div className="space-y-4">
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 bg-purple-600 rounded"></div>
+                  <div className="flex-1">
+                    <p className="text-sm text-textSecondary">Ready</p>
+                    <p className="text-2xl font-bold text-purple-600">{stats.ready}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 bg-blue-600 rounded"></div>
+                  <div className="flex-1">
+                    <p className="text-sm text-textSecondary">In Progress</p>
+                    <p className="text-2xl font-bold text-blue-600">{stats.inProgress}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 bg-yellow-600 rounded"></div>
+                  <div className="flex-1">
+                    <p className="text-sm text-textSecondary">Completed</p>
+                    <p className="text-2xl font-bold text-yellow-600">{stats.completed}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 bg-green-600 rounded"></div>
+                  <div className="flex-1">
+                    <p className="text-sm text-textSecondary">Done</p>
+                    <p className="text-2xl font-bold text-green-600">{stats.done}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Completion Rate */}
+              <div className="bg-gradient-to-r from-primaryDark to-primary rounded-xl p-4 text-white mt-4">
+                <p className="text-sm font-medium opacity-90">Overall Completion Rate</p>
+                <p className="text-3xl font-bold">{Math.round(((stats.completed + stats.done) / stats.total) * 100)}%</p>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Empty State - No Stories */}
+      {selectedProjectId && stats.total === 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.4 }}
+          className="bg-gray-50 border-2 border-gray-200 rounded-2xl p-8 text-center"
+        >
+          <p className="text-gray-800 font-semibold text-lg mb-2">📭 No User Stories</p>
+          <p className="text-gray-700">This project doesn't have any user stories yet.</p>
+        </motion.div>
+      )}
     </div>
   );
 }
