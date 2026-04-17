@@ -113,6 +113,8 @@ export const LOGIN_ENDPOINTS = {
     approveSuggestion: (suggestionId) => `${MODULE2_BASE_URL}assignments/suggestion/${suggestionId}/approve/`, // Approve/change/reject suggestion (POST)
     notifyDeveloper: `${MODULE2_BASE_URL}assignments/notify-developer/`, // Send notification to developer (POST)
     developerResponse: `${MODULE2_BASE_URL}assignments/developer-response/`, // Developer accepts/rejects (POST)
+    developerResponses: `${MODULE2_BASE_URL}assignments/developer-responses/`, // Get all developer responses (GET with ?sprint_id=)
+    rejectionStats: `${MODULE2_BASE_URL}assignments/rejection-stats/`, // Get rejection statistics (GET)
     getMyTickets: `${MODULE2_BASE_URL}developer/my-tickets/`, // Get developer's tickets (GET with ?sprint_id=)
     updateTicketStatus: (taskId) => `${MODULE2_BASE_URL}developer/task/${taskId}/status/`, // Update ticket status (PUT)
     sprintDashboard: (sprintId) => `${MODULE2_BASE_URL}sprint/${sprintId}/all-tasks-dashboard/`, // Get all tasks dashboard (GET)

@@ -127,16 +127,6 @@ export default function AdminPortal() {
                     </div>
                   </div>
                   
-                  <div className="py-2">
-                    <button 
-                      onClick={() => setActiveTab("settings")}
-                      className="w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-surface transition-colors flex items-center gap-2"
-                    >
-                      <span>⚙️</span>
-                      Workspace Settings
-                    </button>
-                  </div>
-                  
                   <div className="border-t border-border pt-2">
                     <button
                       onClick={logout}

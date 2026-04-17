@@ -33,9 +33,9 @@ export default function TaskAllocationHelper() {
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-  const [assignmentDialog, setAssignmentDialog] = useState(null);
   const [selectedDeveloperByTask, setSelectedDeveloperByTask] = useState({});
   const [assignmentSaving, setAssignmentSaving] = useState(false);
+  const [expandedDropdowns, setExpandedDropdowns] = useState({});
 
   const getWorkflowBucket = (item) => {
     const workflowStatus = item.workflow_status || item.status || "PENDING";
@@ -114,7 +114,13 @@ export default function TaskAllocationHelper() {
           `${LOGIN_ENDPOINTS.taskAllocation.getAvailableSprints}?project_id=${selectedProject}`,
           { method: "GET" }
         );
+        console.log("Sprints API Response:", response);
         setSprints(response.sprints || []);
+        if (!response.sprints || response.sprints.length === 0) {
+          setErrorMessage(`No sprints found for project ${selectedProject}. Please create a sprint in Sprint Management first.`);
+        } else {
+          setErrorMessage("");
+        }
         setSelectedSprint(null);
         setCurrentSprintTasks([]);
         setSuggestions([]);
@@ -122,7 +128,7 @@ export default function TaskAllocationHelper() {
         setPlanAlert("");
       } catch (err) {
         console.error("Error fetching sprints:", err);
-        setErrorMessage("Failed to load sprints");
+        setErrorMessage(err.message || "Failed to load sprints. Check console for details.");
         setSprints([]);
       } finally {
         setSprintsLoading(false);
@@ -162,9 +168,24 @@ export default function TaskAllocationHelper() {
   const getDeveloperSkills = (developer) => asArray(developer?.skills);
 
   const getSelectedDeveloperForTask = (task) => {
-    const fallbackId = task.recommended_developer?.developer_id || task.suggested_developer?.id || null;
-    const selectedId = selectedDeveloperByTask[task.task_id] || fallbackId;
-    return getDeveloperById(selectedId) || task.recommended_developer || task.suggested_developer || null;
+    // Option A: Get selected developer from candidates list
+    const selectedId = selectedDeveloperByTask[task.task_id];
+    if (selectedId) {
+      return getDeveloperById(selectedId);
+    }
+    
+    // Fallback to recommended_developer if exists (backward compatibility)
+    if (task.recommended_developer?.developer_id) {
+      return getDeveloperById(task.recommended_developer.developer_id);
+    }
+    
+    // No selected developer yet
+    return null;
+  };
+
+  const getCandidateDevelopers = (task) => {
+    // Option A: Return all candidate developers with reasoning
+    return Array.isArray(task.candidate_developers) ? task.candidate_developers : [];
   };
 
   const summarizeDeveloperForTask = (task, developer) => {
@@ -273,18 +294,9 @@ export default function TaskAllocationHelper() {
     return null;
   };
 
-  const handleOpenAssignmentDialog = (task, mode = "approve") => {
-    const selectedDeveloper = getSelectedDeveloperForTask(task);
-    setAssignmentDialog({
-      task,
-      mode,
-      developerId: selectedDeveloper?.id || selectedDeveloper?.developer_id || "",
-    });
-  };
-
-  const handleConfirmAssignment = async () => {
-    if (!assignmentDialog?.task?.suggestion_id) {
-      setErrorMessage("This sprint plan does not have a suggestion record to approve yet.");
+  const handleDirectAssignAndNotify = async (task, developerId) => {
+    if (!developerId) {
+      setErrorMessage("Please select a developer first");
       return;
     }
 
@@ -292,18 +304,20 @@ export default function TaskAllocationHelper() {
       setAssignmentSaving(true);
       setErrorMessage("");
 
-      const action = assignmentDialog.mode === "manual" ? "change_developer" : "approve";
+      // Approve/assign the suggestion with selected developer
       const response = await handleApproveSuggestion(
-        assignmentDialog.task.suggestion_id,
-        action,
-        assignmentDialog.developerId || null
+        task.suggestion_id,
+        "approve",
+        developerId
       );
 
       if (!response?.success) {
+        setAssignmentSaving(false);
         return;
       }
 
       if (response.approval_workflow_id) {
+        // Notify developer
         const notifyResponse = await apiRequest(LOGIN_ENDPOINTS.taskAllocation.notifyDeveloper, {
           method: "POST",
           body: JSON.stringify({ approval_workflow_id: response.approval_workflow_id }),
@@ -311,21 +325,28 @@ export default function TaskAllocationHelper() {
 
         if (!notifyResponse.success) {
           setErrorMessage(notifyResponse.error || "Assignment approved, but notification failed");
+          setAssignmentSaving(false);
           return;
         }
       }
 
-      setSuccessMessage("Developer will be notified about this task.");
+      setSuccessMessage("Developer assigned and notified successfully!");
       setTimeout(() => setSuccessMessage(""), 2500);
-      setAssignmentDialog(null);
       await refreshAssignmentBoard();
       setBoardTab("assigned");
     } catch (err) {
-      console.error("Error confirming assignment:", err);
+      console.error("Error assigning task:", err);
       setErrorMessage(err.message || "Failed to assign task");
     } finally {
       setAssignmentSaving(false);
     }
+  };
+
+  const toggleDropdown = (taskId) => {
+    setExpandedDropdowns((current) => ({
+      ...current,
+      [taskId]: !current[taskId],
+    }));
   };
 
   const formatBoardItem = (item) => ({
@@ -337,156 +358,221 @@ export default function TaskAllocationHelper() {
   });
 
   const renderAssignmentCard = (rawTask, index, bucketName = getWorkflowBucket(rawTask)) => {
-    const task = formatBoardItem(rawTask);
-    const dev = getSelectedDeveloperForTask(task);
-    const devSummary = summarizeDeveloperForTask(task, dev);
-    const skills = asArray(task.required_skills);
-    const workflowStatus = task.workflow_status || task.status || "PENDING";
-    const isPlanBucket = bucketName === "plan";
-    const isAssignedBucket = bucketName === "assigned";
+    try {
+      const task = formatBoardItem(rawTask);
+      const candidates = getCandidateDevelopers(task);
+      
+      console.log("Rendering task:", task.task_id, "Candidates:", candidates);
+      
+      const selectedDeveloperId = selectedDeveloperByTask[task.task_id];
+      
+      // Get most relevant developer (top candidate)
+      const mostRelevantDev = candidates[0] || null;
+      
+      // Get selected or most relevant developer
+      let currentDev = null;
+      if (selectedDeveloperId) {
+        currentDev = candidates.find(c => String(c.id || c.developer_id) === String(selectedDeveloperId));
+      }
+      currentDev = currentDev || mostRelevantDev;
+      
+      // Check if current dev is manually selected (not the best match)
+      const isManuallySelected = selectedDeveloperId && selectedDeveloperId !== (mostRelevantDev?.id || mostRelevantDev?.developer_id);
+      
+      const skills = asArray(task.required_skills);
+      const workflowStatus = task.workflow_status || task.status || "PENDING";
+      const isPlanBucket = bucketName === "plan";
+      const isAssignedBucket = bucketName === "assigned";
 
     return (
-      <div key={task.task_id || index} className="p-4 rounded-lg border border-border bg-surface/40">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="flex-1">
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              <p className="font-semibold text-textPrimary">{task.task_title || "Untitled Task"}</p>
-              <span className="text-xs px-2 py-1 rounded bg-info/15 text-info">{toNumber(task.estimated_hours)}h</span>
-              <span className="text-xs px-2 py-1 rounded bg-primary/15 text-primary font-medium">{workflowStatus}</span>
-            </div>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {skills.slice(0, 4).map((skill, skillIndex) => (
-                <span key={skillIndex} className="text-xs px-2 py-1 rounded bg-white border border-border text-textMuted">
-                  {skill}
-                </span>
-              ))}
-            </div>
-            <p className="text-xs text-textMuted">{task.reasoning?.reason || "Planned automatically"}</p>
+      <div key={task.task_id || index} className="p-4 rounded-lg border border-border bg-white">
+        {/* Task Details */}
+        <div className="mb-4">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <p className="font-bold text-lg text-textPrimary">{task.task_title || "Untitled Task"}</p>
+            <span className="text-xs px-2 py-1 rounded bg-info/15 text-info font-medium">{toNumber(task.estimated_hours)}h</span>
+            <span className="text-xs px-2 py-1 rounded bg-primary/15 text-primary font-medium">{workflowStatus}</span>
           </div>
-
-          <div className={`min-w-[240px] rounded-lg border p-3 ${dev ? "bg-success/5 border-success/20" : "bg-warning/10 border-warning/30"}`}>
-            {dev ? (
-              <>
-                <p className="text-xs font-bold text-textMuted mb-1">Assign to</p>
-                <p className="font-bold text-textPrimary">{devSummary.name}</p>
-                <p className="text-xs text-textMuted mb-2">{devSummary.email}</p>
-                <div className="flex flex-wrap gap-2 text-xs mb-2">
-                  <span className="px-2 py-1 rounded bg-success/20 text-success font-bold">
-                    {devSummary.skillMatch}% match
-                  </span>
-                  <span className="px-2 py-1 rounded bg-info/15 text-info font-medium">
-                    {devSummary.availableHours}h free
-                  </span>
-                </div>
-                <p className="text-xs text-textMuted">{task.reasoning?.reason || "Smart assignment"}</p>
-                {isPlanBucket && (
-                <div className="mt-3">
-                  <label className="block text-[11px] font-semibold text-textMuted mb-1">Manual developer change</label>
-                  <select
-                    className="w-full px-3 py-2 rounded border border-border bg-white text-sm text-textPrimary"
-                    value={selectedDeveloperByTask[task.task_id] || dev?.developer_id || dev?.id || ""}
-                    onChange={(e) => setSelectedDeveloperByTask((current) => ({ ...current, [task.task_id]: e.target.value }))}
-                  >
-                    <option value="">Keep recommended developer</option>
-                    {teamMembers.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.name} - {toNumber(member.capacityHours || 40)}h/week
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                )}
-              </>
-            ) : (
-              <>
-                <p className="text-xs font-bold text-warning mb-1">No developer available</p>
-                <p className="text-xs text-textMuted">All developers are occupied for this sprint.</p>
-              </>
-            )}
+          
+          {/* Required Skills */}
+          <div className="flex flex-wrap gap-2">
+            {skills.slice(0, 5).map((skill, skillIndex) => (
+              <span key={skillIndex} className="text-xs px-2 py-1 rounded bg-surface border border-border text-textMuted">
+                {skill}
+              </span>
+            ))}
           </div>
         </div>
 
-        {dev && isPlanBucket && (
-          <div className="mt-3 flex gap-2">
-            <button
-              onClick={() => handleOpenAssignmentDialog(task, "approve")}
-              className="px-3 py-2 rounded bg-success text-white text-sm font-medium"
-            >
-              Assign & Notify
-            </button>
-            <button
-              onClick={() => handleOpenAssignmentDialog(task, "manual")}
-              className="px-3 py-2 rounded border border-border bg-white text-sm font-medium text-textPrimary"
-            >
-              Manual Change
-            </button>
+        {/* Developer Selection */}
+        {isPlanBucket && candidates && candidates.length > 0 && currentDev ? (
+          <div className="space-y-3 border-t border-border pt-4">
+            {/* Most Relevant Developer Card */}
+            <div className="p-3 rounded-lg border-2 border-success bg-success/5">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div>
+                  <p className="font-bold text-sm text-textPrimary">{currentDev.name || currentDev.developer_name || "Unknown"}</p>
+                  <p className="text-xs text-textMuted">{currentDev.email || "no-email"}</p>
+                </div>
+                <span className={`text-xs px-2 py-1 rounded text-white font-bold ${isManuallySelected ? 'bg-info' : 'bg-success'}`}>
+                  {isManuallySelected ? 'Selected' : 'Best Match'}
+                </span>
+              </div>
+              
+              <div className="flex flex-wrap gap-2 mb-2">
+                <span className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700">
+                  {currentDev.skill_match ?? 0}% skills
+                </span>
+                <span className="text-xs px-2 py-1 rounded bg-green-50 text-green-700">
+                  {currentDev.available_hours ?? 0}h free
+                </span>
+                <span className="text-xs px-2 py-1 rounded bg-purple-50 text-purple-700">
+                  {currentDev.utilization_percent ?? 0}% busy
+                </span>
+              </div>
+
+              {/* Suitability Reasons - Show only matching (✓) and limit to skills + capacity */}
+              {Array.isArray(currentDev.suitability_reasons) && currentDev.suitability_reasons.length > 0 && (
+                <ul className="text-xs space-y-1 mb-2">
+                  {currentDev.suitability_reasons
+                    .filter(reason => reason && reason.startsWith('✓'))
+                    .slice(0, 2)
+                    .map((reason, ridx) => (
+                      <li key={ridx} className="flex items-start gap-2 text-success">
+                        <span className="flex-1">{reason?.substring(reason.indexOf(' ') + 1) || reason}</span>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleDirectAssignAndNotify(task, currentDev.id || currentDev.developer_id)}
+                disabled={assignmentSaving}
+                className="flex-1 px-3 py-2 rounded bg-success text-white text-sm font-bold hover:bg-success/90 disabled:opacity-50 transition-all"
+              >
+                {assignmentSaving ? "🔄 Assigning..." : "✓ Assign Task"}
+              </button>
+
+              <div className="relative">
+                <button
+                  onClick={() => toggleDropdown(task.task_id)}
+                  className="px-3 py-2 rounded border border-border bg-white text-sm font-medium text-textPrimary hover:bg-surface transition-all"
+                >
+                  {expandedDropdowns[task.task_id] ? "✕ Close" : "⇅ Change Developer"}
+                </button>
+
+                {/* Dropdown Menu */}
+                {expandedDropdowns[task.task_id] && candidates && candidates.length > 1 && (
+                  <div className="absolute top-full right-0 mt-1 w-72 rounded-lg border border-border bg-white shadow-lg z-10 max-h-64 overflow-y-auto">
+                    <div className="p-2 border-b border-border sticky top-0 bg-white">
+                      <p className="text-xs font-bold text-textMuted">Other Relevant Developers:</p>
+                    </div>
+                    {candidates.slice(1).map((candidate, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          setSelectedDeveloperByTask((current) => ({
+                            ...current,
+                            [task.task_id]: candidate.id || candidate.developer_id,
+                          }));
+                          toggleDropdown(task.task_id);
+                        }}
+                        className="w-full text-left p-3 hover:bg-surface transition-all border-b border-border/50 last:border-b-0"
+                      >
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <div>
+                            <p className="font-semibold text-sm text-textPrimary">{candidate.name || candidate.developer_name}</p>
+                            <p className="text-xs text-textMuted">{candidate.email}</p>
+                          </div>
+                          <span className="text-xs px-2 py-1 rounded bg-info/15 text-info font-bold">
+                            {candidate.overall_score?.toFixed(0) || 0}
+                          </span>
+                        </div>
+                        
+                        <div className="flex flex-wrap gap-1 mb-1">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                            {candidate.skill_match || 0}%
+                          </span>
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-700">
+                            {candidate.available_hours || 0}h
+                          </span>
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-purple-50 text-purple-700">
+                            {candidate.utilization_percent || 0}%
+                          </span>
+                        </div>
+
+                        {Array.isArray(candidate.suitability_reasons) && candidate.suitability_reasons.length > 0 && (
+                          <ul className="text-xs space-y-0.5">
+                            {candidate.suitability_reasons
+                              .filter(reason => reason && reason.startsWith('✓'))
+                              .slice(0, 2)
+                              .map((reason, ridx) => (
+                                <li key={ridx} className="flex items-start gap-1 text-success">
+                                  <span className="flex-1 line-clamp-1">{reason?.substring(reason.indexOf(' ') + 1) || reason}</span>
+                                </li>
+                              ))}
+                          </ul>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : isPlanBucket ? (
+          <div className="mt-3 rounded-lg border p-3 bg-warning/10 border-warning/30">
+            <p className="text-xs font-bold text-warning mb-1">No candidates available</p>
+            <p className="text-xs text-textMuted">All developers are occupied for this sprint.</p>
+          </div>
+        ) : null}
+
+        {/* Show assigned developer in other buckets */}
+        {!isPlanBucket && currentDev && (
+          <div className="mt-4 border-t border-border pt-4">
+            <p className="text-xs font-bold text-textMuted mb-2">Assigned to:</p>
+            <div className="p-3 rounded-lg border border-success bg-success/5">
+              <p className="font-bold text-sm text-textPrimary">{currentDev.name || currentDev.developer_name}</p>
+              <p className="text-xs text-textMuted mb-2">{currentDev.email}</p>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="px-2 py-1 rounded bg-success/20 text-success font-bold">{currentDev.skill_match}% match</span>
+                <span className="px-2 py-1 rounded bg-info/15 text-info font-medium">{currentDev.available_hours}h available</span>
+              </div>
+            </div>
           </div>
         )}
 
         {isAssignedBucket && workflowStatus !== "DEV_PENDING" && (
-          <div className="mt-3 flex gap-2">
+          <div className="mt-4 pt-4 border-t border-border">
             <button
               onClick={() => handleNotifyDeveloper(task.approval_workflow_id)}
-              className="px-3 py-2 rounded bg-primary text-white text-sm font-medium"
+              className="w-full px-3 py-2 rounded bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-all"
             >
-              Notify Developer
+              📬 Notify Developer
             </button>
           </div>
         )}
       </div>
     );
+    } catch (renderError) {
+      console.error("Error rendering assignment card:", renderError, "Task:", rawTask);
+      return (
+        <div key={rawTask.task_id || index} className="p-4 rounded-lg border border-error bg-error/10">
+          <p className="text-error font-bold">Error rendering task</p>
+          <p className="text-xs text-textMuted">{rawTask.task_title || "Task"}</p>
+          <p className="text-xs text-error mt-2">{renderError.message}</p>
+        </div>
+      );
+    }
   };
 
   return (
     <div className="space-y-6">
       {successMessage && <div className="bg-success/10 border border-success/30 text-success px-4 py-3 rounded-lg">{successMessage}</div>}
       {errorMessage && <div className="bg-error/10 border border-error/30 text-error px-4 py-3 rounded-lg">{errorMessage}</div>}
-
-      {assignmentDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white border border-border p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-textPrimary mb-2">Confirm assignment</h3>
-            <p className="text-sm text-textMuted mb-4">
-              The selected developer will be notified about this task. After acceptance, the task status will move to in progress.
-            </p>
-
-            <div className="mb-4 rounded-lg border border-border bg-surface/50 p-3">
-              <p className="text-sm font-semibold text-textPrimary">{assignmentDialog.task?.task_title || "Untitled Task"}</p>
-              <p className="text-xs text-textMuted">{toNumber(assignmentDialog.task?.estimated_hours)} hours</p>
-            </div>
-
-            <label className="block text-sm font-medium text-textMuted mb-2">Developer</label>
-            <select
-              className="w-full px-3 py-2 rounded border border-border bg-white text-textPrimary mb-4"
-              value={assignmentDialog.developerId || ""}
-              onChange={(e) => setAssignmentDialog((current) => ({ ...current, developerId: e.target.value }))}
-            >
-              <option value="">Select developer</option>
-              {teamMembers.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name} - {toNumber(member.capacityHours || 40)}h/week
-                </option>
-              ))}
-            </select>
-
-            <div className="flex items-center justify-end gap-3">
-              <button
-                onClick={() => setAssignmentDialog(null)}
-                className="px-4 py-2 rounded border border-border bg-white text-sm font-medium text-textPrimary"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmAssignment}
-                disabled={assignmentSaving || !assignmentDialog.developerId}
-                className="px-4 py-2 rounded bg-primary text-white text-sm font-medium disabled:opacity-50"
-              >
-                {assignmentSaving ? "Assigning..." : "Assign & Notify"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="bg-white border border-border rounded-lg p-6">
         <h2 className="text-xl font-bold text-textPrimary mb-4">Sprint Task Allocation</h2>
@@ -516,6 +602,10 @@ export default function TaskAllocationHelper() {
               <div className="px-3 py-2 border border-border rounded-lg bg-gray-100 text-textMuted text-sm">Select a project first</div>
             ) : sprintsLoading ? (
               <div className="px-3 py-2 border border-border rounded-lg bg-white text-textMuted text-sm">Loading sprints...</div>
+            ) : sprints.length === 0 ? (
+              <div className="px-3 py-2 border border-error/20 rounded-lg bg-error/5 text-error text-sm">
+                No sprints available - <a href="/sprint-management" className="underline">Create a sprint in Sprint Management</a>
+              </div>
             ) : (
               <select
                 value={selectedSprint?.sprint_id?.toString() || ""}
@@ -556,7 +646,6 @@ export default function TaskAllocationHelper() {
           <p className="text-sm text-textPrimary mb-2"><strong>Goal:</strong> {selectedSprint.goal || "No goal set"}</p>
           <div className="flex flex-wrap gap-2 text-xs text-textMuted">
             <span>{toNumber(selectedSprint.total_tasks)} tasks</span>
-            <span>{(selectedSprint.required_skills || []).length || 0} skills</span>
           </div>
         </div>
       )}

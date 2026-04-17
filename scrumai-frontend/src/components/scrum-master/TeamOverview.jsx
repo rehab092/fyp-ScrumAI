@@ -1,22 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { LOGIN_ENDPOINTS, apiRequest } from "../../config/api";
-import TeamMemberDetailModal from "./TeamMemberDetailModal";
 
 export default function TeamOverview() {
-  const [viewMode, setViewMode] = useState("overview"); // 'overview', 'performance', 'capacity'
   const [teamMembers, setTeamMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedMemberId, setSelectedMemberId] = useState(null);
-  const [editingMember, setEditingMember] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
-
-  // Handle Edit
-  const handleEditMember = (e, member) => {
-    e.stopPropagation();
-    setEditingMember(member);
-  };
 
   // Handle Delete
   const handleDeleteMember = async (e, memberId) => {
@@ -62,26 +53,20 @@ export default function TeamOverview() {
         // Transform API response to match component format
         const transformedMembers = Array.isArray(response) 
           ? response.map((member, index) => {
-              // Get the actual ID from API - try multiple possible field names
               const memberId = member.id || member.pk || member.member_id || member.team_member_id || member.user_id;
               
               return {
-                id: memberId || index + 1, // Use actual ID from API
+                id: memberId || index + 1,
                 name: member.name || "Unknown",
-                role: member.role || "Team Member",
                 email: member.email || `${member.name?.toLowerCase().replace(/\s+/g, '.')}@example.com`,
                 avatar: member.name ? member.name.split(' ').map(n => n[0]).join('').toUpperCase() : "TM",
                 skills: member.skills || [],
-                capacity: Math.floor((member.capacityHours || 40) / 4), // Convert hours to capacity points
-                currentLoad: Math.floor((member.assignedHours || 0) / 4),
-                velocity: member.velocity || 0,
-                efficiency: member.efficiency || 0,
-                availability: member.availability || (member.assignedHours < member.capacityHours ? "Available" : "Busy"),
-                timezone: member.timezone || "PST",
-                joinDate: member.joinDate || new Date().toISOString().split('T')[0],
-                tasksCompleted: member.tasksCompleted || 0,
-                averageTaskTime: member.averageTaskTime || "0 days",
-                lastActive: member.lastActive || "Just now"
+                status: member.status || "available",
+                capacityHours: member.capacityHours || 40,
+                assignedHours: member.assignedHours || 0,
+                availableHours: (member.capacityHours || 40) - (member.assignedHours || 0),
+                experience: member.Experience || 0,
+                pastProjects: member.Past_Projects || ""
               };
             })
           : [];
@@ -90,7 +75,6 @@ export default function TeamOverview() {
       } catch (err) {
         console.error('Error fetching team members:', err);
         setError(err.message || "Failed to fetch team members");
-        // Keep empty array on error
         setTeamMembers([]);
       } finally {
         setLoading(false);
@@ -123,391 +107,123 @@ export default function TeamOverview() {
   }
 
   const teamMetrics = {
-    totalMembers: teamMembers.length,
-    averageVelocity: teamMembers.length > 0 
-      ? (teamMembers.reduce((sum, m) => sum + (m.velocity || 0), 0) / teamMembers.length).toFixed(1)
-      : 0,
-    totalCapacity: teamMembers.reduce((sum, m) => sum + (m.capacity || 0), 0),
-    utilizedCapacity: teamMembers.reduce((sum, m) => sum + (m.currentLoad || 0), 0),
-    averageEfficiency: teamMembers.length > 0
-      ? Math.round(teamMembers.reduce((sum, m) => sum + (m.efficiency || 0), 0) / teamMembers.length)
-      : 0,
-    totalTasksCompleted: teamMembers.reduce((sum, m) => sum + (m.tasksCompleted || 0), 0),
-    averageTaskTime: teamMembers.length > 0 && teamMembers[0].averageTaskTime 
-      ? teamMembers[0].averageTaskTime 
-      : "2.5 days"
-  };
-
-  const getAvailabilityColor = (availability) => {
-    switch (availability) {
-      case "Available": return "bg-green-500/20 text-green-400";
-      case "Busy": return "bg-yellow-500/20 text-yellow-400";
-      case "Unavailable": return "bg-red-500/20 text-red-400";
-      default: return "bg-gray-500/20 text-gray-400";
-    }
-  };
-
-  const getEfficiencyColor = (efficiency) => {
-    if (efficiency >= 80) return "text-green-400";
-    if (efficiency >= 60) return "text-yellow-400";
-    return "text-red-400";
+    totalMembers: teamMembers.length
   };
 
   return (
     <div className="max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-sandTan">Team Management</h1>
+        <h1 className="text-2xl font-bold text-sandTan">Team Overview</h1>
+        <div className="text-sm text-textMuted">{teamMembers.length} Team Members</div>
       </div>
-
-      {/* View Mode Selector */}
-      <div className="flex gap-4 mb-8">
-        <button
-          onClick={() => setViewMode("overview")}
-          className={`px-6 py-3 rounded-lg transition-all ${
-            viewMode === "overview"
-              ? "bg-sandTan text-nightBlue shadow-lg"
-              : "border border-sandTan text-sandTan hover:bg-sandTan hover:text-nightBlue"
-          }`}
-        >
-          👥 Team Overview
-        </button>
-        <button
-          onClick={() => setViewMode("performance")}
-          className={`px-6 py-3 rounded-lg transition-all ${
-            viewMode === "performance"
-              ? "bg-sandTan text-nightBlue shadow-lg"
-              : "border border-sandTan text-sandTan hover:bg-sandTan hover:text-nightBlue"
-          }`}
-        >
-          📊 Performance
-        </button>
-        <button
-          onClick={() => setViewMode("capacity")}
-          className={`px-6 py-3 rounded-lg transition-all ${
-            viewMode === "capacity"
-              ? "bg-sandTan text-nightBlue shadow-lg"
-              : "border border-sandTan text-sandTan hover:bg-sandTan hover:text-nightBlue"
-          }`}
-        >
-          📈 Capacity
-        </button>
-      </div>
-
-      {/* Team Metrics */}
+      {/* Team Members List */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8"
+        transition={{ duration: 0.6, delay: 0.2 }}
+        className="space-y-4"
       >
-        <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-4 text-center">
-          <div className="text-2xl font-bold text-sandTan mb-1">{teamMetrics.totalMembers}</div>
-          <div className="text-textMuted text-sm">Team Members</div>
-        </div>
-        <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-4 text-center">
-          <div className="text-2xl font-bold text-sandTan mb-1">{teamMetrics.averageVelocity}</div>
-          <div className="text-textMuted text-sm">Avg Velocity</div>
-        </div>
-        <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-4 text-center">
-          <div className="text-2xl font-bold text-sandTan mb-1">{teamMetrics.totalCapacity}</div>
-          <div className="text-textMuted text-sm">Total Capacity</div>
-        </div>
-        <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-4 text-center">
-          <div className="text-2xl font-bold text-sandTan mb-1">{teamMetrics.utilizedCapacity}</div>
-          <div className="text-textMuted text-sm">Utilized</div>
-        </div>
-        <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-4 text-center">
-          <div className="text-2xl font-bold text-sandTan mb-1">{teamMetrics.averageEfficiency}%</div>
-          <div className="text-textMuted text-sm">Avg Efficiency</div>
-        </div>
-        <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-4 text-center">
-          <div className="text-2xl font-bold text-sandTan mb-1">{teamMetrics.totalTasksCompleted}</div>
-          <div className="text-textMuted text-sm">Tasks Completed</div>
-        </div>
-        <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-4 text-center">
-          <div className="text-2xl font-bold text-sandTan mb-1">{teamMetrics.averageTaskTime}</div>
-          <div className="text-textMuted text-sm">Avg Task Time</div>
-        </div>
-      </motion.div>
+        {teamMembers.map((member) => (
+          <div 
+            key={member.id} 
+            className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6 cursor-pointer hover:shadow-lg transition-all"
+          >
+            <div className="flex items-start gap-4">
+              {/* Avatar */}
+              <div className="w-14 h-14 bg-sandTan text-nightBlue rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0">
+                {member.avatar}
+              </div>
 
-      {/* Team Overview */}
-      {viewMode === "overview" && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="grid grid-cols-1 md:grid-cols-2 gap-6"
-        >
-          {teamMembers.map((member, index) => (
-            <div 
-              key={member.id} 
-              onClick={() => setSelectedMemberId(member.id)}
-              className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6 cursor-pointer hover:shadow-lg transition-all"
-            >
-              <div className="flex items-start gap-4 mb-4">
-                <div className="w-16 h-16 bg-sandTan text-nightBlue rounded-full flex items-center justify-center font-bold text-lg">
-                  {member.avatar}
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-sandTan">{member.name}</h3>
-                  <p className="text-textMuted text-sm">{member.role}</p>
-                  <p className="text-textMuted text-xs">{member.email}</p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getAvailabilityColor(member.availability)}`}>
-                      {member.availability}
-                    </span>
-                    <span className="text-textMuted text-xs">{member.timezone}</span>
-                  </div>
-                </div>
-                {/* Edit/Delete Buttons */}
-                <div className="flex gap-2">
-                  <button
-                    onClick={(e) => handleEditMember(e, member)}
-                    className="p-2 bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 rounded-lg transition-colors"
-                    title="Edit"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={(e) => handleDeleteMember(e, member.id)}
-                    className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-400 rounded-lg transition-colors"
-                    title="Delete"
-                  >
-                    🗑️
-                  </button>
+              {/* Member Info */}
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-sandTan">{member.name}</h3>
+                <p className="text-textMuted text-sm">{member.email}</p>
+                
+                <div className="flex items-center gap-3 mt-2">
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                    member.status === 'available' 
+                      ? 'bg-green-500/20 text-green-400'
+                      : member.status === 'high_load'
+                      ? 'bg-yellow-500/20 text-yellow-400'
+                      : 'bg-red-500/20 text-red-400'
+                  }`}>
+                    {member.status.charAt(0).toUpperCase() + member.status.slice(1).replace('_', ' ')}
+                  </span>
                 </div>
               </div>
 
-              <div className="space-y-4">
-                {/* Skills */}
-                <div>
-                  <h4 className="text-sm font-semibold text-sandTan mb-2">Skills</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {member.skills.map((skill, skillIndex) => (
-                      <span key={skillIndex} className="bg-sandTan/20 text-sandTan px-2 py-1 rounded text-xs">
+              {/* Delete Button */}
+              <button
+                onClick={(e) => handleDeleteMember(e, member.id)}
+                className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-400 rounded-lg transition-colors flex-shrink-0"
+                title="Delete"
+              >
+                🗑️
+              </button>
+            </div>
+
+            {/* Member Details Grid */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Skills */}
+              <div>
+                <h4 className="text-xs font-semibold text-sandTan mb-2 uppercase">Skills</h4>
+                <div className="flex flex-wrap gap-1">
+                  {member.skills && member.skills.length > 0 ? (
+                    member.skills.slice(0, 3).map((skill, idx) => (
+                      <span key={idx} className="bg-sandTan/20 text-sandTan px-2 py-1 rounded text-xs">
                         {skill}
                       </span>
-                    ))}
-                  </div>
+                    ))
+                  ) : (
+                    <span className="text-textMuted text-xs">No skills</span>
+                  )}
                 </div>
+              </div>
 
-                {/* Performance Metrics */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-textMuted text-sm">Velocity</span>
-                      <span className="text-sandTan text-sm font-semibold">{member.velocity}/10</span>
-                    </div>
-                    <div className="w-full bg-nightBlueShadow rounded-full h-2">
-                      <div
-                        className="bg-sandTan h-2 rounded-full transition-all duration-500"
-                        style={{ width: `${(member.velocity / 10) * 100}%` }}
-                      />
-                    </div>
+              {/* Workload Overview */}
+              <div>
+                <h4 className="text-xs font-semibold text-sandTan mb-2 uppercase">Workload</h4>
+                <div className="space-y-2">
+                  {/* Progress Bar */}
+                  <div className="w-full bg-nightBlueShadow rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all duration-500 ${
+                        member.assignedHours / member.capacityHours > 0.8 ? "bg-red-500" :
+                        member.assignedHours / member.capacityHours > 0.6 ? "bg-yellow-500" : "bg-green-500"
+                      }`}
+                      style={{ width: `${(member.assignedHours / member.capacityHours) * 100}%` }}
+                    />
                   </div>
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-textMuted text-sm">Efficiency</span>
-                      <span className={`text-sm font-semibold ${getEfficiencyColor(member.efficiency)}`}>
-                        {member.efficiency}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-nightBlueShadow rounded-full h-2">
-                      <div
-                        className={`h-2 rounded-full transition-all duration-500 ${
-                          member.efficiency >= 80 ? "bg-green-500" :
-                          member.efficiency >= 60 ? "bg-yellow-500" : "bg-red-500"
-                        }`}
-                        style={{ width: `${member.efficiency}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Additional Info */}
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-textMuted">Joined:</span>
-                    <span className="text-textLight ml-1">{member.joinDate}</span>
-                  </div>
-                  <div>
-                    <span className="text-textMuted">Tasks:</span>
-                    <span className="text-textLight ml-1">{member.tasksCompleted}</span>
-                  </div>
-                  <div>
-                    <span className="text-textMuted">Avg Time:</span>
-                    <span className="text-textLight ml-1">{member.averageTaskTime}</span>
-                  </div>
-                  <div>
-                    <span className="text-textMuted">Last Active:</span>
-                    <span className="text-textLight ml-1">{member.lastActive}</span>
+                  {/* Hours Display */}
+                  <div className="flex justify-between text-xs">
+                    <span className="text-textMuted">
+                      Assigned: <span className="text-textLight font-semibold">{member.assignedHours}/{member.capacityHours}h</span>
+                    </span>
+                    <span className="text-textMuted">
+                      Available: <span className={`font-semibold ${member.availableHours > 0 ? 'text-green-400' : 'text-red-400'}`}>{member.availableHours}h</span>
+                    </span>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </motion.div>
-      )}
 
-      {/* Performance View */}
-      {viewMode === "performance" && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="space-y-8"
-        >
-          <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-sandTan mb-6">Performance Metrics</h2>
-            
-            <div className="space-y-6">
-              {teamMembers.map((member, index) => (
-                <div 
-                  key={member.id} 
-                  onClick={() => setSelectedMemberId(member.id)}
-                  className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-6 cursor-pointer hover:shadow-lg transition-all"
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-sandTan text-nightBlue rounded-full flex items-center justify-center font-bold">
-                        {member.avatar}
-                      </div>
-                      <div>
-                        <h3 className="text-textLight font-semibold">{member.name}</h3>
-                        <p className="text-textMuted text-sm">{member.role}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className={`text-2xl font-bold ${getEfficiencyColor(member.efficiency)}`}>
-                        {member.efficiency}%
-                      </div>
-                      <div className="text-textMuted text-sm">Efficiency</div>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                      <h4 className="text-sm font-semibold text-sandTan mb-2">Velocity Trend</h4>
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-textMuted text-sm">Current</span>
-                          <span className="text-sandTan font-semibold">{member.velocity}/10</span>
-                        </div>
-                        <div className="w-full bg-nightBlueShadow rounded-full h-2">
-                          <div
-                            className="bg-sandTan h-2 rounded-full transition-all duration-500"
-                            style={{ width: `${(member.velocity / 10) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <h4 className="text-sm font-semibold text-sandTan mb-2">Task Completion</h4>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-textLight">{member.tasksCompleted}</div>
-                        <div className="text-textMuted text-sm">Total Tasks</div>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <h4 className="text-sm font-semibold text-sandTan mb-2">Average Time</h4>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-textLight">{member.averageTaskTime}</div>
-                        <div className="text-textMuted text-sm">Per Task</div>
-                      </div>
-                    </div>
-                  </div>
+              {/* Experience */}
+              <div>
+                <h4 className="text-xs font-semibold text-sandTan mb-2 uppercase">Experience</h4>
+                <div className="text-lg font-bold text-textLight">{member.experience} <span className="text-xs text-textMuted">months</span></div>
+              </div>
+
+              {/* Past Projects */}
+              <div>
+                <h4 className="text-xs font-semibold text-sandTan mb-2 uppercase">Projects</h4>
+                <div className="text-textMuted text-xs line-clamp-2">
+                  {member.pastProjects || "No projects listed"}
                 </div>
-              ))}
+              </div>
             </div>
           </div>
-        </motion.div>
-      )}
-
-      {/* Capacity View */}
-      {viewMode === "capacity" && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="space-y-8"
-        >
-          <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-sandTan mb-6">Team Capacity Analysis</h2>
-            
-            <div className="space-y-4">
-              {teamMembers.map((member, index) => (
-                <div 
-                  key={member.id} 
-                  onClick={() => setSelectedMemberId(member.id)}
-                  className="bg-nightBlue/60 border border-sandTan/30 rounded-xl p-4 cursor-pointer hover:shadow-lg transition-all"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-sandTan text-nightBlue rounded-full flex items-center justify-center font-bold">
-                        {member.avatar}
-                      </div>
-                      <div>
-                        <h3 className="text-textLight font-semibold">{member.name}</h3>
-                        <p className="text-textMuted text-sm">{member.role}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-sandTan font-semibold">{member.currentLoad}/{member.capacity}</span>
-                      <div className="text-textMuted text-sm">points</div>
-                    </div>
-                  </div>
-                  
-                  <div className="w-full bg-nightBlueShadow rounded-full h-3">
-                    <div
-                      className={`h-3 rounded-full transition-all duration-500 ${
-                        member.currentLoad / member.capacity > 0.8 ? "bg-red-500" :
-                        member.currentLoad / member.capacity > 0.6 ? "bg-yellow-500" : "bg-sandTan"
-                      }`}
-                      style={{ width: `${(member.currentLoad / member.capacity) * 100}%` }}
-                    />
-                  </div>
-                  
-                  <div className="flex justify-between items-center mt-2 text-sm">
-                    <span className="text-textMuted">
-                      {Math.round((member.currentLoad / member.capacity) * 100)}% utilized
-                    </span>
-                    <span className="text-textMuted">
-                      {member.capacity - member.currentLoad} points available
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Capacity Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6 text-center">
-              <div className="text-3xl font-bold text-sandTan mb-2">40</div>
-              <div className="text-textMuted">Total Capacity</div>
-            </div>
-            <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6 text-center">
-              <div className="text-3xl font-bold text-sandTan mb-2">29</div>
-              <div className="text-textMuted">Utilized</div>
-            </div>
-            <div className="bg-nightBlueShadow/60 border border-sandTan/20 rounded-2xl p-6 text-center">
-              <div className="text-3xl font-bold text-sandTan mb-2">11</div>
-              <div className="text-textMuted">Available</div>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Team Member Detail Modal */}
-      {selectedMemberId && (
-        <TeamMemberDetailModal
-          memberId={selectedMemberId}
-          onClose={() => setSelectedMemberId(null)}
-        />
-      )}
+        ))}
+      </motion.div>
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
@@ -535,115 +251,6 @@ export default function TeamOverview() {
                 Delete
               </button>
             </div>
-          </motion.div>
-        </div>
-      )}
-
-      {/* Edit Member Modal */}
-      {editingMember && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white border border-gray-200 rounded-2xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto shadow-xl"
-          >
-            <h3 className="text-xl font-bold text-gray-800 mb-4">Edit Team Member</h3>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                const workspaceId = localStorage.getItem("workspaceId");
-                
-                try {
-                  const response = await fetch(LOGIN_ENDPOINTS.team.update(editingMember.id), {
-                    method: "PATCH",
-                    headers: {
-                      "Content-Type": "application/json",
-                      "Workspace-ID": workspaceId,
-                    },
-                    body: JSON.stringify({
-                      name: formData.get("name"),
-                      email: formData.get("email"),
-                      skills: formData.get("skills").split(",").map(s => s.trim()).filter(Boolean),
-                      capacityHours: parseInt(formData.get("capacityHours")) || 40,
-                    }),
-                  });
-
-                  if (response.ok) {
-                    const updated = await response.json();
-                    setTeamMembers(prev => prev.map(m => 
-                      m.id === editingMember.id 
-                        ? { ...m, name: updated.name || formData.get("name"), email: updated.email || formData.get("email"), skills: updated.skills || formData.get("skills").split(",").map(s => s.trim()) }
-                        : m
-                    ));
-                    setEditingMember(null);
-                  } else {
-                    const data = await response.json();
-                    alert(data.error || "Failed to update member");
-                  }
-                } catch (err) {
-                  console.error("Update error:", err);
-                  alert("Failed to update member");
-                }
-              }}
-              className="space-y-4"
-            >
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                <input
-                  type="text"
-                  name="name"
-                  defaultValue={editingMember.name}
-                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-primary focus:border-primary"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
-                  type="email"
-                  name="email"
-                  defaultValue={editingMember.email}
-                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-primary focus:border-primary"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Skills (comma-separated)</label>
-                <input
-                  type="text"
-                  name="skills"
-                  defaultValue={editingMember.skills?.join(", ") || ""}
-                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-primary focus:border-primary"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Capacity (hours/week)</label>
-                <input
-                  type="number"
-                  name="capacityHours"
-                  defaultValue={editingMember.capacity * 4}
-                  min="1"
-                  max="60"
-                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-primary focus:border-primary"
-                />
-              </div>
-              <div className="flex gap-4 justify-end pt-4">
-                <button
-                  type="button"
-                  onClick={() => setEditingMember(null)}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primaryDark transition-colors font-semibold"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
           </motion.div>
         </div>
       )}

@@ -202,7 +202,7 @@ export default function TeamMemberPortal() {
   };
 
   const navigationItems = [
-    { id: "dashboard", label: "Dashboard", icon: "📊" },
+    { id: "dashboard", label: "Dashboard", icon: "�" },
     { id: "assignedTasks", label: "Assigned Tasks", icon: "✅" },
     { id: "taskTable", label: "Task Table", icon: "📋" },
     { id: "delays", label: "Delay Alerts", icon: "⏰" },
@@ -756,10 +756,18 @@ function TaskTableContent({ memberData }) {
 
   const updateTaskStatus = async (task, nextStatus) => {
     try {
+      if (!task.task_id) {
+        console.error("Task ID is missing:", task);
+        setErrorMessage("Unable to update: Task ID is missing");
+        return;
+      }
+
       setSavingTaskId(task.task_id);
       setErrorMessage("");
+      
       const response = await apiRequest(LOGIN_ENDPOINTS.taskAllocation.updateTicketStatus(task.task_id), {
         method: "PUT",
+        headers: { "X-Developer-Email": developerEmail },
         body: JSON.stringify({
           new_status: nextStatus,
           progress_percentage: nextStatus === "DONE" ? 100 : nextStatus === "IN_PROGRESS" ? 50 : 0,
@@ -780,19 +788,28 @@ function TaskTableContent({ memberData }) {
 
   const getStatusBadge = (task) => {
     const workflowStatus = task.status;
-    if (workflowStatus === "DONE") return "bg-success/10 text-success border-success/30";
+    if (workflowStatus === "COMPLETED") return "bg-success/10 text-success border-success/30";
     if (workflowStatus === "IN_PROGRESS") return "bg-primary/10 text-primary border-primary/30";
-    if (workflowStatus === "BLOCKED") return "bg-error/10 text-error border-error/30";
-    if (workflowStatus === "DELAYED") return "bg-warning/10 text-warning border-warning/30";
+    if (workflowStatus === "DELAYED") return "bg-error/10 text-error border-error/30";
     return "bg-surface text-textSecondary border-border";
   };
 
   const getStatusLabel = (status) => {
     if (status === "IN_PROGRESS") return "In Progress";
-    if (status === "BLOCKED") return "Blocked";
-    if (status === "DONE") return "Done";
+    if (status === "COMPLETED") return "Completed";
     if (status === "DELAYED") return "Delayed";
     return "To Do";
+  };
+
+  const isTaskDelayed = (task) => {
+    if (task.status === "DELAYED" || task.is_delayed) {
+      return true;
+    }
+    if (task.due_date) {
+      const dueDate = new Date(task.due_date);
+      return new Date() > dueDate && task.status !== "COMPLETED";
+    }
+    return false;
   };
 
   return (
@@ -851,16 +868,22 @@ function TaskTableContent({ memberData }) {
                       </span>
                     </td>
                     <td className="px-4 py-4">
-                      <select
-                        value={task.status}
-                        disabled={savingTaskId === task.task_id}
-                        onChange={(e) => updateTaskStatus(task, e.target.value)}
-                        className="px-3 py-2 rounded-lg border border-border bg-white text-sm text-textPrimary disabled:opacity-50"
-                      >
-                        <option value="IN_PROGRESS">In Progress</option>
-                        <option value="BLOCKED">Blocked</option>
-                        <option value="DONE">Done</option>
-                      </select>
+                      {isTaskDelayed(task) ? (
+                        <span className="px-3 py-2 rounded-lg text-sm font-semibold bg-red-500/20 text-red-500 border border-red-500/30">
+                          Delayed (Past Due)
+                        </span>
+                      ) : (
+                        <select
+                          value={task.status}
+                          disabled={savingTaskId === task.approval_workflow_id || savingTaskId === task.task_id}
+                          onChange={(e) => updateTaskStatus(task, e.target.value)}
+                          className="px-3 py-2 rounded-lg border border-border bg-white text-sm text-textPrimary disabled:opacity-50"
+                        >
+                          <option value="TO_DO">To Do</option>
+                          <option value="IN_PROGRESS">In Progress</option>
+                          <option value="COMPLETED">Completed</option>
+                        </select>
+                      )}
                     </td>
                   </tr>
                 ))}

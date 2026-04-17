@@ -7,6 +7,7 @@ export default function ProductOwnerDashboard() {
   const [userStories, setUserStories] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [rejectedCount, setRejectedCount] = useState(0);
 
   const workspaceId = localStorage.getItem("workspaceId");
   const ownerId = localStorage.getItem("ownerId") || localStorage.getItem("userId");
@@ -48,6 +49,20 @@ export default function ProductOwnerDashboard() {
         }
       } catch (err) {
         console.error("Error fetching stories:", err);
+      }
+
+      // Fetch rejection statistics
+      try {
+        const rejectionResponse = await fetch(
+          LOGIN_ENDPOINTS.taskAllocation.rejectionStats,
+          { headers: { "Workspace-ID": workspaceId } }
+        );
+        if (rejectionResponse.ok) {
+          const rejectionData = await rejectionResponse.json();
+          setRejectedCount(rejectionData.total_rejected_assignments || 0);
+        }
+      } catch (err) {
+        console.error("Error fetching rejection stats:", err);
       }
     } finally {
       setLoading(false);
@@ -91,6 +106,13 @@ export default function ProductOwnerDashboard() {
       change: "Active projects",
       trend: "neutral",
       icon: "📦"
+    },
+    {
+      title: "Rejected",
+      value: rejectedCount,
+      change: "Need reassignment",
+      trend: rejectedCount > 0 ? "up" : "neutral",
+      icon: "❌"
     },
     {
       title: "Backlog Ready",
@@ -166,7 +188,7 @@ export default function ProductOwnerDashboard() {
   return (
     <div className="max-w-7xl mx-auto">
       {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6 mb-8">
         {metrics.map((metric, index) => (
           <motion.div
             key={index}
