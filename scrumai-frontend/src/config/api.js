@@ -107,6 +107,29 @@ export const LOGIN_ENDPOINTS = {
     edit: (sprintId) => `${API_BASE_URL}api/sprint/${sprintId}/edit/`,
     delete: (sprintId) => `${API_BASE_URL}api/sprint/${sprintId}/delete/`,
   },
+
+  // Task Allocation Helper Endpoints
+  taskAllocation: {
+    generateSuggestions: `${MODULE2_BASE_URL}assignments/generate-suggestions/`, // Generate assignment suggestions (POST)
+    listSuggestions: `${MODULE2_BASE_URL}assignments/suggestions/`, // List suggestions (GET with ?sprint_id=&status=)
+    approveSuggestion: (suggestionId) => `${MODULE2_BASE_URL}assignments/suggestion/${suggestionId}/approve/`, // Approve/change/reject suggestion (POST)
+    notifyDeveloper: `${MODULE2_BASE_URL}assignments/notify-developer/`, // Send notification to developer (POST)
+    developerResponse: `${MODULE2_BASE_URL}assignments/developer-response/`, // Developer accepts/rejects (POST)
+    developerResponses: `${MODULE2_BASE_URL}assignments/developer-responses/`, // Get all developer responses (GET with ?sprint_id=)
+    rejectionStats: `${MODULE2_BASE_URL}assignments/rejection-stats/`, // Get rejection statistics (GET)
+    getMyTickets: `${MODULE2_BASE_URL}developer/my-tickets/`, // Get developer's tickets (GET with ?sprint_id=)
+    updateTicketStatus: (taskId) => `${MODULE2_BASE_URL}developer/task/${taskId}/status/`, // Update ticket status (PUT)
+    sprintDashboard: (sprintId) => `${MODULE2_BASE_URL}sprint/${sprintId}/all-tasks-dashboard/`, // Get all tasks dashboard (GET)
+    // Helper endpoints
+    getProjectsByWorkspace: `${MODULE2_BASE_URL}projects/by-workspace/`, // Get all projects for workspace (GET)
+    getAvailableSprints: `${MODULE2_BASE_URL}sprints/available/`, // Get all sprints with tasks (GET with ?project_id=&limit=)
+    // Project Analytics Endpoints
+    getProjectStats: (projectId) => `${MODULE2_BASE_URL}project-analytics/${projectId}/stats/`, // Get stats for a project (GET)
+    getProjectStories: (projectId) => `${MODULE2_BASE_URL}project-analytics/${projectId}/stories/`, // Get user stories for a project (GET)
+    getAllProjectsAnalytics: `${MODULE2_BASE_URL}project-analytics/all/`, // Get analytics for all projects (GET)
+    // Testing endpoints
+    testSprintAssignment: `${MODULE2_BASE_URL}test/sprint-assignment/`, // [TESTING ONLY] Fetch sprint and task data from SprintItem (GET with ?sprint_id=)
+  },
 };
 
 // API Helper Functions

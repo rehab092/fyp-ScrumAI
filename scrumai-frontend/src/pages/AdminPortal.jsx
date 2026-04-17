@@ -49,13 +49,23 @@ export default function AdminPortal() {
   const renderContent = () => {
     switch (activeTab) {
       case "dashboard":
-        return <AdminDashboard workspaceInfo={workspaceInfo} onNavigateToTeam={() => setActiveTab("team")} />;
+        return (
+          <AdminDashboard 
+            workspaceInfo={workspaceInfo} 
+            onNavigateToTeam={() => setActiveTab("team")}
+          />
+        );
       case "team":
         return <TeamManagement workspaceInfo={workspaceInfo} />;
       case "settings":
         return <WorkspaceSettings workspaceInfo={workspaceInfo} />;
       default:
-        return <AdminDashboard workspaceInfo={workspaceInfo} onNavigateToTeam={() => setActiveTab("team")} />;
+        return (
+          <AdminDashboard 
+            workspaceInfo={workspaceInfo} 
+            onNavigateToTeam={() => setActiveTab("team")}
+          />
+        );
     }
   };
 
