@@ -42,6 +42,7 @@ class TaskSuggestion(models.Model):
     # Ranking Details
     skill_match_details = models.JSONField(default=dict, blank=True)  # {skill: {score, match_type}, ...}
     alternative_developers = models.JSONField(default=list, blank=True)  # [{id, name, score}, ...]
+    rejected_developers = models.JSONField(default=list, blank=True)  # [developer_id, ...] - Track rejected developers
     
     # Workflow
     status = models.CharField(max_length=50, choices=SUGGESTION_STATUS, default='PENDING')

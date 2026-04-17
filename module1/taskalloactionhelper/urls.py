@@ -8,12 +8,14 @@ urlpatterns = [
     # Phase 2: List & Review Suggestions
     path('assignments/suggestions/', views.list_suggestions, name='list_suggestions'),
     path('assignments/suggestion/<int:suggestion_id>/approve/', views.approve_or_modify_suggestion, name='approve_suggestion'),
+    path('assignments/rejection-stats/', views.get_rejection_stats, name='get_rejection_stats'),
     
     # Phase 3: Notify Developer
     path('assignments/notify-developer/', views.notify_developer_of_assignment, name='notify_developer'),
     
     # Phase 4: Developer Response
     path('assignments/developer-response/', views.developer_response_to_assignment, name='developer_response'),
+    path('assignments/developer-responses/', views.get_developer_responses, name='get_developer_responses'),
     
     # Phase 5: Developer Portal - My Tickets
     path('developer/my-tickets/', views.get_developer_tickets, name='get_developer_tickets'),

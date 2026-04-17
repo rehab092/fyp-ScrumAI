@@ -1652,12 +1652,27 @@ def get_userstories_by_project(request, project_id):
             for story in stories:
                 # Get all tasks/subtasks for this story
                 tasks = list(Backlog.objects.filter(user_story_id=story.id).values(
-                    'task_id', 'tasks', 'subtasks', 'skills_required', 'estimated_hours'
+                    'task_id', 'tasks', 'subtasks', 'skills_required', 'estimated_hours', 'status'
                 ))
                 
                 # Calculate total story points from tasks
                 total_hours = sum(task.get('estimated_hours', 0) or 0 for task in tasks)
                 story_points = int(total_hours)
+                
+                # Calculate overall status based on child tasks
+                if tasks:
+                    task_statuses = [task.get('status', 'pending') for task in tasks]
+                    # If all completed → Completed
+                    if all(s == 'Completed' for s in task_statuses):
+                        overall_status = 'Completed'
+                    # If any in progress → In Progress
+                    elif any(s == 'In Progress' for s in task_statuses):
+                        overall_status = 'In Progress'
+                    # Otherwise → Ready
+                    else:
+                        overall_status = 'Ready'
+                else:
+                    overall_status = 'Ready'
                 
                 # Build story response
                 story_data = {
@@ -1669,7 +1684,7 @@ def get_userstories_by_project(request, project_id):
                     'priority': story.priority,
                     'project_name': story.project_name,
                     'project_id': story.project_id,
-                    'status': story.status if hasattr(story, 'status') else 'Ready',
+                    'status': overall_status,
                     'story_points': story_points,
                     'task_count': len(tasks),
                     'tasks': tasks

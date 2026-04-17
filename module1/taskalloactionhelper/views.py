@@ -107,6 +107,48 @@ def _get_scrum_master_email(workspace):
     return getattr(workspace, 'adminEmail', '') or ''
 
 
+def _sync_backlog_status(task, new_status):
+    """
+    Synchronize the Backlog status with task status changes.
+    Maps new_status to Backlog status choices.
+    """
+    status_mapping = {
+        'IN_PROGRESS': Backlog.STATUS_IN_PROGRESS,
+        'TO_DO': Backlog.STATUS_PENDING,
+        'COMPLETED': Backlog.STATUS_COMPLETED,
+        'DONE': Backlog.STATUS_COMPLETED,  # Legacy support
+    }
+    
+    backlog_status = status_mapping.get(new_status, Backlog.STATUS_PENDING)
+    task.status = backlog_status
+    task.save(update_fields=['status'])
+    return backlog_status
+
+
+def _update_developer_status(developer, workspace):
+    """
+    Update developer status based on workload.
+    available: < 60% utilized
+    high_load: 60-80% utilized
+    overloaded: > 80% utilized
+    """
+    capacity = getattr(developer, 'capacityHours', 40) or 40
+    assigned = getattr(developer, 'assignedHours', 0) or 0
+    
+    utilization = (assigned / capacity * 100) if capacity > 0 else 0
+    
+    if utilization > 80:
+        new_status = 'overloaded'
+    elif utilization >= 60:
+        new_status = 'high_load'
+    else:
+        new_status = 'available'
+    
+    developer.status = new_status
+    developer.save(update_fields=['status'])
+    return new_status
+
+
 def _build_assignment_plan(task_objects, workspace, sprint_project_name, sprint_weeks):
     team_members = TeamMember.objects.filter(workspace=workspace)
     skill_matcher = SkillMatcher()
@@ -189,59 +231,86 @@ def _build_assignment_plan(task_objects, workspace, sprint_project_name, sprint_
             reverse=True,
         )
 
-        recommended_dev = None
-        assignment_mode = 'unassigned'
-
-        if candidate_rows:
-            skilled_candidates = [item for item in candidate_rows if item['skill_match'] > 0]
-            if skilled_candidates:
-                recommended_dev = skilled_candidates[0]
-                assignment_mode = 'skill'
+        # Build detailed reasoning for each candidate
+        candidates_with_reasoning = []
+        for candidate in candidate_rows:
+            dev_state = dev_workloads[candidate['developer_id']]
+            
+            # Determine suitability reasons
+            reasons = []
+            
+            # Skill match reasoning - show only MATCHED required skills
+            if candidate['skill_match'] > 0:
+                # Find which required skills the developer has
+                dev_skills_lower = [s.lower().strip() for s in dev_state['skills']]
+                matched_required_skills = [s for s in task_skills 
+                                          if s.lower().strip() in dev_skills_lower]
+                
+                if matched_required_skills:
+                    # Show only the matched required skills (max 3)
+                    matched_display = ', '.join(matched_required_skills[:3])
+                    reasons.append(f"✓ {candidate['skill_match']}% match - has {len(matched_required_skills)}/{len(task_skills)} required skills ({matched_display})")
+                else:
+                    # Related matches but not exact required skills
+                    reasons.append(f"✓ {candidate['skill_match']}% match - has related skills")
             else:
-                recommended_dev = candidate_rows[0]
-                assignment_mode = 'availability'
-
-        if recommended_dev:
-            dev_state = dev_workloads[recommended_dev['developer_id']]
-            dev_state['planned_assigned_hours'] += weekly_load
-            dev_state['assignments'].append({
-                'task_id': getattr(task, 'task_id', None) or getattr(task, 'id', None),
-                'task_title': task_title[:50],
-                'hours': weekly_load,
-                'total_hours': estimated_hours,
-                'assignment_mode': assignment_mode,
-            })
-
-            if assignment_mode == 'skill':
-                reason_text = 'Best overall skill and capacity fit'
-            elif assignment_mode == 'availability':
-                reason_text = 'No skill match found, assigned to the most available developer'
+                reasons.append("○ No skill match")
+            
+            # Capacity reasoning
+            if candidate['available_hours'] >= weekly_load:
+                reasons.append(f"✓ Has {candidate['available_hours']}h available")
             else:
-                reason_text = 'Assigned by fallback'
-
-            workload_level = 'Low'
-            if dev_state['planned_assigned_hours'] >= (dev_state['total_capacity'] * 0.75):
-                workload_level = 'High'
-            elif dev_state['planned_assigned_hours'] >= (dev_state['total_capacity'] * 0.5):
-                workload_level = 'Medium'
-
-            reasoning = {
-                'skill_match': f"{recommended_dev['skill_match']}% match" if recommended_dev['skill_match'] > 0 else 'No direct skill match',
-                'capacity': f"{recommended_dev['available_hours']}h available from sprint capacity",
-                'workload': workload_level,
-                'reason': reason_text,
-                'history': recommended_dev['history_signals'][:3],
-                'assignment_mode': assignment_mode,
+                reasons.append(f"⚠ Only {candidate['available_hours']}h available")
+            
+            # Workload level
+            utilization = candidate['assigned_hours'] / candidate['total_capacity'] * 100 if candidate['total_capacity'] > 0 else 0
+            if utilization < 50:
+                workload_label = "Low workload"
+                reasons.append(f"✓ {utilization:.0f}% utilized - Low workload")
+            elif utilization < 75:
+                workload_label = "Medium workload"
+                reasons.append(f"~ {utilization:.0f}% utilized - Medium workload")
+            else:
+                workload_label = "High workload"
+                reasons.append(f"⚠ {utilization:.0f}% utilized - High workload")
+            
+            # Experience reasoning
+            if candidate['experience_score'] > 70:
+                reasons.append(f"✓ Experienced ({candidate['experience_score']:.0f} exp level)")
+            elif candidate['experience_score'] > 30:
+                reasons.append(f"~ Moderate experience ({candidate['experience_score']:.0f} exp level)")
+            else:
+                reasons.append(f"○ Junior developer ({candidate['experience_score']:.0f} exp level)")
+            
+            # History bonus reasoning
+            if candidate['history_signals']:
+                history_text = '; '.join(candidate['history_signals'][:2])
+                reasons.append(f"✓ Relevant history: {history_text}")
+            
+            candidate_with_reasoning = {
+                'developer_id': candidate['developer_id'],
+                'developer_name': candidate['developer_name'],
+                'email': candidate['email'],
+                'skills': candidate['skills'],
+                'skill_match': candidate['skill_match'],
+                'capacity_score': candidate['capacity_score'],
+                'workload_score': candidate['workload_score'],
+                'experience_score': candidate['experience_score'],
+                'overall_score': candidate['overall_score'],
+                'available_hours': candidate['available_hours'],
+                'total_capacity': candidate['total_capacity'],
+                'assigned_hours': candidate['assigned_hours'],
+                'utilization_percent': round(utilization, 1),
+                'can_fit': candidate['can_fit'],
+                'suitability_reasons': reasons,
             }
-        else:
-            reasoning = {
-                'skill_match': 'N/A',
-                'capacity': 'All developers fully booked',
-                'workload': 'N/A',
-                'reason': 'All developers are occupied for this sprint',
-                'history': [],
-                'assignment_mode': 'unassigned',
-            }
+            candidates_with_reasoning.append(candidate_with_reasoning)
+        
+        # NOTE: NOT updating developer workload or assignedHours during suggestion phase
+        # These will only be updated when developer ACCEPTS the assignment
+        
+        # Track unassigned tasks (those with no candidates at all)
+        if not candidate_rows:
             unassigned_tasks.append(getattr(task, 'task_id', getattr(task, 'id', None)))
 
         assignment_entry = {
@@ -251,37 +320,36 @@ def _build_assignment_plan(task_objects, workspace, sprint_project_name, sprint_
             'required_skills': task_skills,
             'estimated_hours': estimated_hours,
             'allocated_weekly_hours': weekly_load,
-            'status': 'UNASSIGNED' if recommended_dev is None else 'PENDING',
-            'recommended_developer': recommended_dev,
-            'all_candidates': candidate_rows[:5],
-            'reasoning': reasoning,
+            'status': 'UNASSIGNED' if not candidate_rows else 'PENDING_ASSIGNMENT',
+            'recommended_developer': None,  # No forced primary developer
+            'candidate_developers': candidates_with_reasoning,  # All candidates with reasoning
+            'all_candidates': candidate_rows[:5],  # Keep for backward compatibility
         }
 
         assignment_plan.append(assignment_entry)
 
     total_hours = sum(item['estimated_hours'] for item in assignment_plan)
-    assigned_dev_count = len([dev for dev in dev_workloads.values() if dev['planned_assigned_hours'] > 0])
+    # Note: Not tracking assigned_dev_count during suggestion phase since we don't pre-assign
+    assigned_dev_count = len(team_members)  # All available developers can potentially be assigned
     no_developer_available = len(unassigned_tasks) > 0
 
     team_workload_summary = {
         'total_developers': len(team_members),
-        'developers_assigned': assigned_dev_count,
         'total_sprint_hours': total_hours,
         'average_load': round(total_hours / len(team_members), 1) if team_members else 0,
-        'developer_assignments': [
+        'developer_capacities': [
             {
                 'developer_name': dev['name'],
                 'email': dev['email'],
-                'assigned_hours': round(dev['assigned_hours'] + dev['planned_assigned_hours'], 1),
-                'capacity': round(dev['total_capacity'], 1),
-                'available_hours': round(max(0, dev['total_capacity'] - (dev['assigned_hours'] + dev['planned_assigned_hours'])), 1),
-                'utilization': f"{round(((dev['assigned_hours'] + dev['planned_assigned_hours']) / dev['total_capacity']) * 100, 1)}%" if dev['total_capacity'] else '0%',
-                'tasks': dev['assignments'],
+                'total_capacity': round(dev['total_capacity'], 1),
+                'current_assigned_hours': round(dev['assigned_hours'], 1),
+                'available_hours': round(dev['available_hours'], 1),
+                'current_utilization': f"{round((dev['assigned_hours'] / dev['total_capacity']) * 100, 1)}%" if dev['total_capacity'] else '0%',
             }
-            for dev in dev_workloads.values() if dev['planned_assigned_hours'] > 0
+            for dev in dev_workloads.values()
         ],
-        'no_developer_available': no_developer_available,
-        'unassigned_tasks_count': len(unassigned_tasks),
+        'tasks_needing_assignment': len([x for x in assignment_plan if x['status'] == 'UNASSIGNED']),
+        'tasks_with_candidates': len([x for x in assignment_plan if x['status'] == 'PENDING_ASSIGNMENT']),
     }
 
     return assignment_plan, team_workload_summary, no_developer_available, assigned_dev_count
@@ -341,10 +409,10 @@ def generate_suggestions(request):
                     'error': f'SprintAssignment {sprint_id} not found'
                 }, status=404)
         else:
-            # Regular Sprint ID
+            # Regular Sprint ID - fetch with related workspace and items
             try:
                 sprint_numeric_id = int(sprint_id) if isinstance(sprint_id, str) else sprint_id
-                sprint = Sprint.objects.get(id=sprint_numeric_id, workspace=workspace)
+                sprint = Sprint.objects.select_related('workspace').get(id=sprint_numeric_id, workspace=workspace)
             except (ValueError, Sprint.DoesNotExist):
                 return JsonResponse({
                     'success': False,
@@ -360,7 +428,12 @@ def generate_suggestions(request):
             sprint_goal = sprint_assignment.user_story.goal if sprint_assignment.user_story else "User Story Tasks"
             sprint_project_name = getattr(sprint_assignment.project, 'name', '') or ''
         else:
-            sprint_items = SprintItem.objects.filter(sprint=sprint).select_related('task', 'task__user_story')
+            sprint_items = SprintItem.objects.filter(sprint=sprint).select_related(
+                'sprint',
+                'sprint__workspace',
+                'task',
+                'task__user_story'
+            )
             task_objects = [item.task for item in sprint_items if item.task]
             sprint_name = sprint.name
             sprint_goal = sprint.goal
@@ -388,16 +461,29 @@ def generate_suggestions(request):
 
         if not is_sprint_assignment:
             for task_object, plan_entry in zip(task_objects, assignment_plan):
-                recommended = plan_entry.get('recommended_developer') or {}
-                developer_id = recommended.get('developer_id')
-                suggested_developer = TeamMember.objects.filter(id=developer_id).first() if developer_id else None
+                # Get all candidate developers with reasoning (Option A - no forced primary)
+                candidate_developers = plan_entry.get('candidate_developers', [])
+                
+                # Store top candidate for backward compatibility, but don't force assignment
+                top_candidate = candidate_developers[0] if candidate_developers else None
+                suggested_developer = TeamMember.objects.filter(id=top_candidate['developer_id']).first() if top_candidate else None
+                
+                # Store ALL candidates with their full reasoning
                 alternative_developers = [
                     {
-                        'id': candidate.get('developer_id'),
-                        'name': candidate.get('developer_name'),
-                        'score': candidate.get('overall_score', 0),
+                        'id': candidate['developer_id'],
+                        'name': candidate['developer_name'],
+                        'email': candidate['email'],
+                        'score': candidate['overall_score'],
+                        'skill_match': candidate['skill_match'],
+                        'capacity_score': candidate['capacity_score'],
+                        'workload_score': candidate['workload_score'],
+                        'experience_score': candidate['experience_score'],
+                        'available_hours': candidate['available_hours'],
+                        'utilization_percent': candidate['utilization_percent'],
+                        'suitability_reasons': candidate['suitability_reasons'],
                     }
-                    for candidate in plan_entry.get('all_candidates', [])[1:4]
+                    for candidate in candidate_developers
                 ]
 
                 suggestion, _ = TaskSuggestion.objects.update_or_create(
@@ -405,24 +491,24 @@ def generate_suggestions(request):
                     task_fk=task_object,
                     defaults={
                         'workspace_fk': workspace,
-                        'suggested_developer_fk': suggested_developer,
-                        'skill_match_score': float(recommended.get('skill_match') or 0),
-                        'capacity_score': float(recommended.get('capacity_score') or 0),
-                        'workload_score': float(recommended.get('workload_score') or 0),
-                        'experience_score': float(recommended.get('experience_score') or 0),
-                        'overall_rank': float(recommended.get('overall_score') or 0),
+                        'suggested_developer_fk': None,  # No forced primary developer
+                        'skill_match_score': float(top_candidate.get('skill_match', 0)) if top_candidate else 0,
+                        'capacity_score': float(top_candidate.get('capacity_score', 0)) if top_candidate else 0,
+                        'workload_score': float(top_candidate.get('workload_score', 0)) if top_candidate else 0,
+                        'experience_score': float(top_candidate.get('experience_score', 0)) if top_candidate else 0,
+                        'overall_rank': float(top_candidate.get('overall_score', 0)) if top_candidate else 0,
                         'skill_match_details': {
                             'required_skills': plan_entry.get('required_skills', []),
-                            'reasoning': plan_entry.get('reasoning', {}),
-                            'assignment_mode': plan_entry.get('reasoning', {}).get('assignment_mode'),
+                            'total_candidates': len(candidate_developers),
+                            'suitability_approach': 'Show all candidates - Scrum Master chooses best fit',
                         },
                         'alternative_developers': alternative_developers,
-                        'status': 'PENDING' if suggested_developer else 'REJECTED',
+                        'status': 'PENDING' if candidate_developers else 'UNASSIGNED',
                     },
                 )
 
                 plan_entry['suggestion_id'] = suggestion.id
-                plan_entry['suggested_developer'] = plan_entry.get('recommended_developer')
+                # Don't set a single suggested_developer - let Scrum Master choose
 
             response_payload['sprint_dates'] = f"{sprint.start_date} to {sprint.end_date}"
 
@@ -456,10 +542,16 @@ def list_suggestions(request):
                 'error': 'Missing Workspace-ID header or sprint_id'
             }, status=400)
         
-        # Get suggestions
+        # Get suggestions with related sprint and task data from sprint management
         suggestions = TaskSuggestion.objects.filter(
             workspace_fk_id=workspace_id,
             sprint_fk_id=sprint_id
+        ).select_related(
+            'sprint_fk',
+            'sprint_fk__workspace',
+            'task_fk',
+            'task_fk__user_story',
+            'suggested_developer_fk'
         )
         
         if status_filter != 'ALL':
@@ -469,6 +561,12 @@ def list_suggestions(request):
         for sugg in suggestions:
             workflow = getattr(sugg, 'approval_workflow', None)
             workflow_status = workflow.current_status if workflow else None
+            
+            # Filter out rejected developers from candidates
+            candidates = sugg.alternative_developers or []
+            rejected_ids = sugg.rejected_developers or []
+            filtered_candidates = [c for c in candidates if c.get('developer_id') not in rejected_ids]
+            
             suggestion_data.append({
                 'suggestion_id': sugg.id,
                 'task_id': getattr(sugg.task_fk, 'task_id', getattr(sugg.task_fk, 'id', None)),
@@ -476,18 +574,16 @@ def list_suggestions(request):
                 'task_description': sugg.task_fk.tasks[:100] if getattr(sugg.task_fk, 'tasks', None) else '',
                 'required_skills': sugg.skill_match_details.get('required_skills', []) if isinstance(sugg.skill_match_details, dict) else [],
                 'estimated_hours': sugg.task_fk.estimated_hours if getattr(sugg.task_fk, 'estimated_hours', None) is not None else 0,
-                'suggested_developer': {
-                    'id': sugg.suggested_developer_fk.id,
-                    'name': sugg.suggested_developer_fk.name,
-                    'email': sugg.suggested_developer_fk.email,
-                } if sugg.suggested_developer_fk else None,
+                'suggested_developer': None,  # No forced primary developer
+                'candidate_developers': filtered_candidates,  # All candidates except rejected ones
+                'rejected_developers': rejected_ids,  # Track rejections
+                'total_candidates': len(filtered_candidates),
                 'scores': {
                     'skill_match': sugg.skill_match_score,
                     'capacity': sugg.capacity_score,
                     'workload': sugg.workload_score,
                     'overall': sugg.overall_rank,
                 },
-                'alternatives': sugg.alternative_developers,
                 'status': sugg.status,
                 'workflow_status': workflow_status,
                 'approval_workflow_id': workflow.id if workflow else None,
@@ -500,6 +596,7 @@ def list_suggestions(request):
             'success': True,
             'suggestions': suggestion_data,
             'pending_count': suggestions.filter(status='PENDING').count(),
+            'unassigned_count': suggestions.filter(status='UNASSIGNED').count(),
             'approved_count': suggestions.filter(status='APPROVED').count(),
             'rejected_count': suggestions.filter(status='REJECTED').count(),
             'workflow_counts': {
@@ -538,8 +635,14 @@ def approve_or_modify_suggestion(request, suggestion_id):
                 'error': 'Invalid action'
             }, status=400)
         
-        # Get suggestion
-        suggestion = TaskSuggestion.objects.select_related('sprint_fk').get(id=suggestion_id)
+        # Get suggestion with sprint and workspace data from sprint management
+        suggestion = TaskSuggestion.objects.select_related(
+            'sprint_fk',
+            'sprint_fk__workspace',
+            'workspace_fk',
+            'task_fk',
+            'suggested_developer_fk'
+        ).get(id=suggestion_id)
 
         workspace = None
         if workspace_id:
@@ -559,8 +662,17 @@ def approve_or_modify_suggestion(request, suggestion_id):
             suggestion.workspace_fk = workspace
         
         if action == 'approve':
+            # For Option A: Scrum Master must select a developer from candidates
+            if not new_developer_id:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'new_developer_id required - Please select a developer from the candidates'
+                }, status=400)
+            
+            selected_dev = TeamMember.objects.get(id=new_developer_id)
+            suggestion.suggested_developer_fk = selected_dev
             suggestion.status = 'APPROVED'
-            assigned_dev = suggestion.suggested_developer_fk
+            assigned_dev = selected_dev
         
         elif action == 'reject':
             suggestion.status = 'REJECTED'
@@ -747,6 +859,9 @@ def developer_response_to_assignment(request):
             dev.assignedHours = int(round((getattr(dev, 'assignedHours', 0) or 0) + weekly_load))
             dev.save(update_fields=['assignedHours'])
             
+            # Update developer status based on new workload
+            _update_developer_status(dev, workflow.workspace_fk)
+            
             # Create ticket status history
             TicketStatusHistory.objects.create(
                 task_fk=workflow.task_suggestion_fk.task_fk,
@@ -756,12 +871,24 @@ def developer_response_to_assignment(request):
                 reason='Assignment accepted by developer and moved to in progress'
             )
             
+            # Sync Backlog status when task is accepted
+            _sync_backlog_status(workflow.task_suggestion_fk.task_fk, 'IN_PROGRESS')
+            
+            # Store response metadata for tracking
+            Notification.objects.create(
+                workspace_id=workspace_id,
+                user_email=_get_scrum_master_email(workflow.workspace_fk),
+                title=f'Developer Response: {dev.name}',
+                message=f'Task: {workflow.task_suggestion_fk.task_fk.task_id} | Status: ACCEPTED',
+                type='SUCCESS',
+            )
+            
             # Notify Scrum Master
             Notification.objects.create(
                 workspace_id=workspace_id,
                 user_email=_get_scrum_master_email(workflow.workspace_fk),
-                title='Task Accepted',
-                message=f'Developer {dev.name} accepted task {workflow.task_suggestion_fk.task_fk.task_id}',
+                title='✅ Task Accepted',
+                message=f'Developer {dev.name} accepted task {workflow.task_suggestion_fk.task_fk.task_id} and started working on it',
                 type='SUCCESS',
             )
             
@@ -776,19 +903,46 @@ def developer_response_to_assignment(request):
             workflow.current_status = 'DEV_REJECTED'
             workflow.save()
             
-            # Notify Scrum Master about rejection
+            dev = workflow.sm_approved_developer_fk
+            rejected_dev_name = dev.name if dev else "Developer"
+            
+            # Track rejected developer
+            suggestion = workflow.task_suggestion_fk
+            if suggestion.rejected_developers is None:
+                suggestion.rejected_developers = []
+            if dev.id not in suggestion.rejected_developers:
+                suggestion.rejected_developers.append(dev.id)
+            suggestion.save()
+            
+            # Notify Scrum Master about rejection with reassignment option
+            rejection_note = f'{rejected_dev_name} rejected task {workflow.task_suggestion_fk.task_fk.task_id}'
+            if reason:
+                rejection_note += f'. Reason: {reason}'
+            rejection_note += '. Please reassign to another developer.'
+            
             Notification.objects.create(
                 workspace_id=workspace_id,
                 user_email=_get_scrum_master_email(workflow.workspace_fk),
-                title='Task Assignment Rejected',
-                message=f'Developer {dev.name} rejected task {workflow.task_suggestion_fk.task_fk.task_id}. Reason: {reason}',
+                title='❌ Task Assignment Rejected',
+                message=rejection_note,
                 type='WARNING',
+            )
+            
+            # Store response metadata for tracking
+            Notification.objects.create(
+                workspace_id=workspace_id,
+                user_email=_get_scrum_master_email(workflow.workspace_fk),
+                title=f'Developer Response: {rejected_dev_name}',
+                message=f'Task: {workflow.task_suggestion_fk.task_fk.task_id} | Status: REJECTED | Reason: {reason or "Not provided"}',
+                type='INFO',
             )
             
             return JsonResponse({
                 'success': True,
                 'status': 'DEV_REJECTED',
-                'message': f'Assignment rejected by developer. Reason: {reason}',
+                'rejected_developer_id': dev.id if dev else None,
+                'rejected_developer_name': rejected_dev_name,
+                'message': f'Assignment rejected. Scrum Master notified to reassign.',
                 'sm_notified': True,
                 'alternative_suggestions_available': len(
                     workflow.task_suggestion_fk.alternative_developers
@@ -829,11 +983,15 @@ def get_developer_tickets(request):
             email=developer_email
         )
         
-        # Get assignments
+        # Get assignments with sprint data from sprint management
         workflows = AssignmentApprovalWorkflow.objects.filter(
             workspace_fk_id=workspace_id,
             sm_approved_developer_fk=developer,
             current_status__in=['SM_APPROVED', 'DEV_PENDING', 'DEV_ACCEPTED', 'ACTIVE']
+        ).select_related(
+            'task_suggestion_fk__sprint_fk',
+            'task_suggestion_fk__task_fk',
+            'workspace_fk'
         )
         
         if sprint_id:
@@ -855,19 +1013,23 @@ def get_developer_tickets(request):
             ).order_by('-timestamp').first()
             
             current_status = latest_status.new_status if latest_status else 'TO_DO'
-            if current_status not in ['DONE', 'DELAYED']:
+            if current_status not in ['COMPLETED', 'DELAYED']:
                 effective_due_date = getattr(task, 'due_date', None) or sprint_due_date
-                if effective_due_date and timezone.now().date() > effective_due_date:
-                    current_status = 'DELAYED'
+                if effective_due_date:
+                    due_date_obj = effective_due_date if hasattr(effective_due_date, 'date') else effective_due_date
+                    if timezone.now().date() > (due_date_obj.date() if hasattr(due_date_obj, 'date') else due_date_obj):
+                        current_status = 'DELAYED'
             
             # Check if delayed
             is_delayed = False
             effective_due_date = getattr(task, 'due_date', None) or sprint_due_date
-            if current_status != 'DONE' and effective_due_date:
-                if timezone.now().date() > effective_due_date:
+            if current_status != 'COMPLETED' and effective_due_date:
+                due_date_obj = effective_due_date if hasattr(effective_due_date, 'date') else effective_due_date
+                if timezone.now().date() > (due_date_obj.date() if hasattr(due_date_obj, 'date') else due_date_obj):
                     is_delayed = True
             
             tickets.append({
+                'task_id': task.task_id,  # Add explicit task_id field
                 'ticket_id': f"TASK-{getattr(task, 'task_id', getattr(task, 'id', ''))}",
                 'task_name': task.tasks,
                 'title': task.task_id,
@@ -949,14 +1111,14 @@ def update_ticket_status(request, task_id):
         developer_email = request.headers.get('X-Developer-Email')
         data = json.loads(request.body)
         
-        new_status = data.get('new_status')  # TO_DO, IN_PROGRESS, DONE, BLOCKED
+        new_status = data.get('new_status')  # TO_DO, IN_PROGRESS, COMPLETED
         progress_percentage = data.get('progress_percentage', 0)
         reason = data.get('reason', '')
         
-        if new_status not in ['TO_DO', 'IN_PROGRESS', 'DONE', 'BLOCKED']:
+        if new_status not in ['TO_DO', 'IN_PROGRESS', 'COMPLETED']:
             return JsonResponse({
                 'success': False,
-                'error': 'Invalid status'
+                'error': 'Invalid status. Allowed values: TO_DO, IN_PROGRESS, COMPLETED'
             }, status=400)
         
         # Get task
@@ -966,6 +1128,10 @@ def update_ticket_status(request, task_id):
         workflow = AssignmentApprovalWorkflow.objects.filter(
             task_suggestion_fk__task_fk=task,
             sm_approved_developer_fk=developer,
+        ).select_related(
+            'task_suggestion_fk__sprint_fk',
+            'task_suggestion_fk__task_fk',
+            'workspace_fk'
         ).first()
 
         if not workflow or workflow.current_status != 'ACTIVE':
@@ -974,12 +1140,31 @@ def update_ticket_status(request, task_id):
                 'error': 'Status can only be changed for accepted tasks'
             }, status=400)
         
-        # Get current status
+        # Check if task is delayed (past due date)
+        sprint = workflow.task_suggestion_fk.sprint_fk
+        effective_due_date = getattr(task, 'due_date', None) or getattr(sprint, 'end_date', None)
+        
+        # Get latest status
         latest_history = TicketStatusHistory.objects.filter(
             task_fk=task
         ).order_by('-timestamp').first()
         
-        old_status = latest_history.new_status if latest_history else None
+        current_status = latest_history.new_status if latest_history else 'TO_DO'
+        
+        # Check if task is past due and not completed
+        if current_status != 'COMPLETED' and effective_due_date:
+            try:
+                due_date_compare = effective_due_date.date() if hasattr(effective_due_date, 'date') else effective_due_date
+                if timezone.now().date() > due_date_compare:
+                    return JsonResponse({
+                        'success': False,
+                        'error': 'Cannot update status: Task is past due date. Contact Scrum Master to extend deadline.'
+                    }, status=400)
+            except (TypeError, AttributeError):
+                pass
+        
+        # Get current status
+        old_status = current_status
         
         # Create status history entry
         status_history = TicketStatusHistory.objects.create(
@@ -991,6 +1176,9 @@ def update_ticket_status(request, task_id):
             reason=reason,
             progress_percentage=progress_percentage,
         )
+        
+        # Sync Backlog status when task status changes
+        _sync_backlog_status(task, new_status)
         
         # Notify Scrum Master
         Notification.objects.create(
@@ -1157,17 +1345,25 @@ def get_available_sprints_with_tasks(request):
                 'error': f'Workspace {workspace_id} not found'
             }, status=404)
         
-        # Get sprints for this workspace only
+        # Get sprints for this workspace only from sprint management
         sprints_query = Sprint.objects.filter(
-            workspace=workspace,
-            is_active=True
-        ).order_by('-start_date')
+            workspace=workspace
+        ).select_related('workspace').order_by('-start_date')
         
         # Filter by project if specified
         if project_id:
-            sprints_query = sprints_query.filter(project_id=project_id)
+            try:
+                project_id_int = int(project_id)
+                sprints_query = sprints_query.filter(project_id=project_id_int)
+            except (ValueError, TypeError):
+                pass  # If project_id is invalid, ignore filter
         
         sprints_query = sprints_query[:limit]
+        
+        print(f"[DEBUG] Fetching sprints - workspace_id: {workspace_id}, project_id: {project_id}")
+        print(f"[DEBUG] Sprint count: {sprints_query.count()}")
+        for sprint in sprints_query:
+            print(f"[DEBUG] Sprint: id={sprint.id}, name={sprint.name}, project_id={sprint.project_id}, is_active={sprint.is_active}")
         
         sprints_data = []
         for sprint in sprints_query:
@@ -1356,8 +1552,8 @@ def debug_sprints_in_workspace(request):
                 'error': f'Workspace {workspace_id} not found'
             }, status=404)
         
-        # Get ALL sprints for this workspace (including inactive)
-        all_sprints = Sprint.objects.filter(workspace=workspace).order_by('-start_date')
+        # Get ALL sprints for this workspace (including inactive) from sprint management
+        all_sprints = Sprint.objects.filter(workspace=workspace).select_related('workspace').order_by('-start_date')
         
         sprints_debug = []
         for sprint in all_sprints:
@@ -1392,5 +1588,189 @@ def debug_sprints_in_workspace(request):
         return JsonResponse({
             'success': False,
             'error': f'Error: {str(e)}',
+            'error_type': type(e).__name__
+        }, status=500)
+
+
+# ==================== STATS: Get Rejection Statistics ====================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_rejection_stats(request):
+    """
+    GET /api/module2/assignments/rejection-stats/
+    
+    Get count of rejected assignments grouped by project/workspace.
+    Used to display rejection metrics in Product Owner Dashboard.
+    """
+    try:
+        workspace_id = request.headers.get('Workspace-ID')
+        
+        if not workspace_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing Workspace-ID header'
+            }, status=400)
+        
+        # Verify workspace exists
+        try:
+            workspace = AdminWorkspace.objects.get(id=workspace_id)
+        except AdminWorkspace.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': f'Workspace {workspace_id} not found'
+            }, status=404)
+        
+        # Get all rejected assignments in this workspace
+        rejected_suggestions = TaskSuggestion.objects.filter(
+            workspace_fk=workspace
+        ).exclude(rejected_developers__exact=[])  # Only if rejected_developers list is not empty
+        
+        total_rejected = 0
+        rejected_by_project = {}
+        rejected_by_developer = {}
+        
+        for suggestion in rejected_suggestions:
+            if suggestion.rejected_developers:
+                rejection_count = len(suggestion.rejected_developers)
+                total_rejected += rejection_count
+                
+                # Group by project
+                project_id = suggestion.project_fk.id if suggestion.project_fk else 0
+                project_name = suggestion.project_fk.name if suggestion.project_fk else 'Unknown'
+                if project_id not in rejected_by_project:
+                    rejected_by_project[project_id] = {
+                        'project_name': project_name,
+                        'count': 0
+                    }
+                rejected_by_project[project_id]['count'] += rejection_count
+                
+                # Count each developer's rejections
+                for dev_id in suggestion.rejected_developers:
+                    try:
+                        dev = TeamMember.objects.get(id=dev_id)
+                        if dev_id not in rejected_by_developer:
+                            rejected_by_developer[dev_id] = {
+                                'developer_name': dev.name,
+                                'count': 0
+                            }
+                        rejected_by_developer[dev_id]['count'] += 1
+                    except TeamMember.DoesNotExist:
+                        pass
+        
+        # Convert dictionaries to lists
+        projects_data = [{'project_id': pid, **data} for pid, data in rejected_by_project.items()]
+        developers_data = [{'developer_id': did, **data} for did, data in rejected_by_developer.items()]
+        
+        return JsonResponse({
+            'success': True,
+            'workspace_id': workspace_id,
+            'total_rejected_assignments': total_rejected,
+            'rejected_by_project': projects_data,
+            'rejected_by_developer': developers_data,
+        }, status=200)
+    
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"Error in get_rejection_stats: {str(e)}")
+        print(error_trace)
+        return JsonResponse({
+            'success': False,
+            'error': f'Error fetching rejection stats: {str(e)}',
+            'error_type': type(e).__name__
+        }, status=500)
+
+
+# ==================== SCRUM MASTER: View Developer Responses with Reasons ====================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_developer_responses(request):
+    """
+    GET /api/module2/assignments/developer-responses/
+    
+    Fetch all developer responses (accept/reject) for Scrum Master view.
+    Includes developer name, task details, response status, and rejection reason.
+    """
+    try:
+        workspace_id = request.headers.get('Workspace-ID')
+        sprint_id = request.GET.get('sprint_id')
+        
+        if not workspace_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing Workspace-ID header'
+            }, status=400)
+        
+        # Verify workspace exists
+        try:
+            workspace = AdminWorkspace.objects.get(id=workspace_id)
+        except AdminWorkspace.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': f'Workspace {workspace_id} not found'
+            }, status=404)
+        
+        # Get all workflows in this workspace with responses
+        workflows = AssignmentApprovalWorkflow.objects.filter(
+            workspace_fk=workspace,
+            developer_response__in=['ACCEPT', 'REJECT']
+        ).select_related(
+            'sm_approved_developer_fk',
+            'task_suggestion_fk',
+            'task_suggestion_fk__task_fk',
+            'task_suggestion_fk__sprint_fk'
+        ).order_by('-developer_response_timestamp')
+        
+        # Filter by sprint if provided
+        if sprint_id:
+            workflows = workflows.filter(task_suggestion_fk__sprint_fk__id=sprint_id)
+        
+        responses_data = []
+        for workflow in workflows:
+            dev = workflow.sm_approved_developer_fk
+            task = workflow.task_suggestion_fk.task_fk if workflow.task_suggestion_fk else None
+            sprint = workflow.task_suggestion_fk.sprint_fk if workflow.task_suggestion_fk else None
+            
+            responses_data.append({
+                'workflow_id': workflow.id,
+                'developer_id': dev.id if dev else None,
+                'developer_name': dev.name if dev else 'Unknown',
+                'developer_email': dev.email if dev else None,
+                'task_id': task.task_id if task else 'Unknown',
+                'task_title': task.tasks if task else 'Unknown',  # Use 'tasks' field instead of 'task_title'
+                'sprint_id': sprint.id if sprint else None,
+                'sprint_name': sprint.name if sprint else 'Unknown',
+                'status': workflow.developer_response,  # ACCEPT or REJECT
+                'status_icon': '✅' if workflow.developer_response == 'ACCEPT' else '❌',
+                'reason': workflow.developer_rejection_reason if workflow.developer_response == 'REJECT' else None,
+                'responded_at': workflow.developer_response_timestamp.isoformat() if workflow.developer_response_timestamp else None,
+                'workflow_status': workflow.current_status,
+            })
+        
+        # Separate accepted and rejected
+        accepted = [r for r in responses_data if r['status'] == 'ACCEPT']
+        rejected = [r for r in responses_data if r['status'] == 'REJECT']
+        
+        return JsonResponse({
+            'success': True,
+            'workspace_id': workspace_id,
+            'total_responses': len(responses_data),
+            'accepted_count': len(accepted),
+            'rejected_count': len(rejected),
+            'accepted': accepted,
+            'rejected': rejected,
+            'all_responses': responses_data,
+        }, status=200)
+    
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"Error in get_developer_responses: {str(e)}")
+        print(error_trace)
+        return JsonResponse({
+            'success': False,
+            'error': f'Error fetching developer responses: {str(e)}',
             'error_type': type(e).__name__
         }, status=500)
