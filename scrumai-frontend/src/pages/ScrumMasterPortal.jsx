@@ -9,6 +9,7 @@ import ResourcePlanning from "../components/scrum-master/ResourcePlanning";
 import DependencyMonitor from "../components/scrum-master/DependencyMonitor";
 import Reports from "../components/scrum-master/Reports";
 import TaskAllocationHelper from "../components/scrum-master/TaskAllocationHelper";
+import DelayAlerts from "../components/scrum-master/DelayAlerts";
 
 export default function ScrumMasterPortal() {
   const { user, logout } = useAuth();
@@ -49,6 +50,7 @@ export default function ScrumMasterPortal() {
     { id: "sprints", label: "Sprint Management", icon: "🗓️" },
     { id: "resources", label: "Resource Planning", icon: "📈" },
     { id: "dependencies", label: "Dependency Monitor", icon: "🔗" },
+    { id: "delays", label: "Delay Alerts", icon: "⏰" },
     { id: "reports", label: "Reports", icon: "📋" }
   ];
 
@@ -66,6 +68,8 @@ export default function ScrumMasterPortal() {
         return <ResourcePlanning />;
       case "dependencies":
         return <DependencyMonitor />;
+      case "delays":
+        return <DelayAlerts />;
       case "reports":
         return <Reports />;
       default:

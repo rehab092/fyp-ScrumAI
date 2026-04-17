@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { LOGIN_ENDPOINTS, apiRequest } from "../../config/api";
+import { LOGIN_ENDPOINTS, apiRequest, getProjectsByWorkspace } from "../../config/api";
 
 const NODE_WIDTH = 210;
 const NODE_HEIGHT = 72;
@@ -248,29 +248,17 @@ export default function DependencyMapper() {
 
       try {
         let projectList = [];
-        const ownerId = localStorage.getItem("ownerId");
+        const workspaceId = localStorage.getItem("workspaceId");
 
-        try {
-          if (ownerId) {
-            const ownerProjects = await apiRequest(LOGIN_ENDPOINTS.projects.getByOwner(ownerId), {
-              method: "GET",
-            });
-            projectList = Array.isArray(ownerProjects) ? ownerProjects : [];
-          }
-        } catch (projectErr) {
-          // Keep page usable even if projects endpoint is unavailable.
-          projectList = [];
-        }
-
-        if (projectList.length === 0) {
-          try {
-            const allProjects = await apiRequest(LOGIN_ENDPOINTS.projects.getAllFromUserStories, {
-              method: "GET",
-            });
-            projectList = Array.isArray(allProjects) ? allProjects : [];
-          } catch (projectErr) {
-            projectList = [];
-          }
+        if (workspaceId) {
+          const workspaceProjects = await getProjectsByWorkspace(workspaceId);
+          projectList = Array.isArray(workspaceProjects)
+            ? workspaceProjects
+            : Array.isArray(workspaceProjects?.projects)
+              ? workspaceProjects.projects
+              : Array.isArray(workspaceProjects?.data)
+                ? workspaceProjects.data
+                : [];
         }
 
         setProjects(projectList);

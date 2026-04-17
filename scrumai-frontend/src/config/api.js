@@ -78,6 +78,11 @@ export const LOGIN_ENDPOINTS = {
     delete: (taskId) => `${API_BASE_URL}userstories/task/${taskId}/delete/`, // Delete task
   },
 
+  // Dependency Endpoints
+  dependencies: {
+    getByProject: (projectId) => `${API_BASE_URL}api/dependencies/project/${projectId}/`,
+  },
+
   // Team Members Endpoints (require Workspace-ID header)
   team: {
     add: `${MODULE2_BASE_URL}team/add/`, // Add team member (POST)
@@ -121,6 +126,25 @@ export const LOGIN_ENDPOINTS = {
     getAvailableSprints: `${MODULE2_BASE_URL}sprints/available/`, // Get all sprints with tasks (GET with ?project_id=&limit=)
     // Testing endpoints
     testSprintAssignment: `${MODULE2_BASE_URL}test/sprint-assignment/`, // [TESTING ONLY] Fetch sprint and task data from SprintItem (GET with ?sprint_id=)
+  },
+
+  // Delay Alerts Endpoints
+  delayAlerts: {
+    getProjects: `${API_BASE_URL}api/delay-alerts/projects/`,
+    getProjectContext: (projectId, sprintId) =>
+      `${API_BASE_URL}api/delay-alerts/project/${projectId}/context/${sprintId ? `?sprintId=${encodeURIComponent(sprintId)}` : ""}`,
+    runEngine: `${API_BASE_URL}api/delay-alerts/engine/run/`,
+    upsertTaskProgress: `${API_BASE_URL}api/delay-alerts/task-progress/upsert/`,
+    listAlerts: (projectId, active = true) => {
+      const params = new URLSearchParams();
+      if (projectId !== undefined && projectId !== null && projectId !== "") {
+        params.set("projectId", String(projectId));
+      }
+      params.set("active", String(!!active));
+      const queryString = params.toString();
+      return `${API_BASE_URL}api/delay-alerts/alerts/${queryString ? `?${queryString}` : ""}`;
+    },
+    resolveAlert: (alertId) => `${API_BASE_URL}api/delay-alerts/alerts/${alertId}/resolve/`,
   },
 };
 

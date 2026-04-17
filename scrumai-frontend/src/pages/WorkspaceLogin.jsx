@@ -8,7 +8,7 @@ export default function WorkspaceLogin() {
   const navigate = useNavigate();
   
   // Login type: 'admin' or 'user'
-  const [loginType, setLoginType] = useState("admin");
+  const [loginType, setLoginType] = useState("user");
   
   // Form data
   const [formData, setFormData] = useState({
