@@ -19,7 +19,7 @@ export default function DelayAlerts() {
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState(null);
   const [delayedTasks, setDelayedTasks] = useState([]);
-  const [summary, setSummary] = useState({ taskCount: 0, delayedCount: 0 });
+  const [summary, setSummary] = useState({ taskCount: 0, delayedCount: 0, cascadingCount: 0 });
   const [loading, setLoading] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
   const [error, setError] = useState("");
@@ -46,7 +46,17 @@ export default function DelayAlerts() {
       setProjectsLoading(true);
       const response = await apiRequest(LOGIN_ENDPOINTS.delayAlerts.getProjects);
       const projectList = extractArray(response, "data");
-      setProjects(projectList);
+      const delayedProjects = projectList.filter(
+        (project) => Number(project?.delayedTaskCount || 0) > 0
+      );
+      setProjects(delayedProjects);
+      setSelectedProject((current) => {
+        if (!current) return null;
+        const stillVisible = delayedProjects.some(
+          (project) => String(project.projectId) === String(current.projectId)
+        );
+        return stillVisible ? current : null;
+      });
       setError("");
     } catch (err) {
       setError(err.message || "Failed to load projects");
@@ -62,7 +72,7 @@ export default function DelayAlerts() {
     if (!projectId) {
       setLoading(false);
       setDelayedTasks([]);
-      setSummary({ taskCount: 0, delayedCount: 0 });
+      setSummary({ taskCount: 0, delayedCount: 0, cascadingCount: 0 });
       return;
     }
 
@@ -134,13 +144,16 @@ export default function DelayAlerts() {
         });
 
       setDelayedTasks(delayed);
+      const directDelayedCount = delayed.filter((task) => task.delayType === "direct").length;
+      const cascadingCount = delayed.length - directDelayedCount;
       setSummary({
         taskCount: Number(context?.summary?.taskCount || tasks.length || 0),
-        delayedCount: Number(context?.summary?.delayedCount || delayed.length || 0),
+        delayedCount: directDelayedCount,
+        cascadingCount,
       });
     } catch (err) {
       setDelayedTasks([]);
-      setSummary({ taskCount: 0, delayedCount: 0 });
+      setSummary({ taskCount: 0, delayedCount: 0, cascadingCount: 0 });
       setError(err.message || "Failed to load delay alerts");
     } finally {
       if (showSpinner) setLoading(false);
@@ -370,7 +383,9 @@ export default function DelayAlerts() {
 
                       <h3 className="text-lg font-semibold text-textPrimary">{task.taskTitle}</h3>
                       {task.subtasks ? <p className="text-sm text-textSecondary">{task.subtasks}</p> : null}
-                      <p className="text-sm text-textSecondary">Reason: {task.reason}</p>
+                      {task.delayType !== "direct" ? (
+                        <p className="text-sm text-textSecondary">Reason: {task.reason}</p>
+                      ) : null}
                     </div>
 
                     <div className="text-right">
@@ -414,12 +429,12 @@ export default function DelayAlerts() {
                   <p className="text-2xl font-bold text-primary">{summary.taskCount}</p>
                 </div>
                 <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-                  <p className="text-textSecondary text-sm mb-1">Delayed Tasks</p>
+                  <p className="text-textSecondary text-sm mb-1">Delayed Tasks (Direct)</p>
                   <p className="text-2xl font-bold text-red-400">{summary.delayedCount}</p>
                 </div>
                 <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4">
-                  <p className="text-textSecondary text-sm mb-1">Shown (Filtered)</p>
-                  <p className="text-2xl font-bold text-orange-400">{filteredTasks.length}</p>
+                  <p className="text-textSecondary text-sm mb-1">Predicted / Cascading</p>
+                  <p className="text-2xl font-bold text-orange-400">{summary.cascadingCount}</p>
                 </div>
               </div>
             </div>

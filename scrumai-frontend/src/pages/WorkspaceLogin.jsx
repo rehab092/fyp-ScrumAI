@@ -110,6 +110,11 @@ export default function WorkspaceLogin() {
         if (user.workspaceId) {
           localStorage.setItem("workspaceId", user.workspaceId);
         }
+        const resolvedWorkspaceName =
+          user.workspaceName || user.workspace?.workspaceName || user.workspace_name || "";
+        if (resolvedWorkspaceName) {
+          localStorage.setItem("workspaceName", resolvedWorkspaceName);
+        }
 
         // Normalize role from backend (SCRUM_MASTER, PRODUCT_OWNER, DEVELOPER)
         const backendRole = (user.role || "").toUpperCase().replace(/[\s-]/g, "_");
@@ -142,6 +147,7 @@ export default function WorkspaceLogin() {
           role: normalizedRole,
           name: user.name || formData.email.split("@")[0],
           type: user.type || "TEAM_MEMBER",
+          workspaceName: resolvedWorkspaceName,
           avatar: (user.name || formData.email).substring(0, 2).toUpperCase(),
           loginTime: new Date().toISOString(),
         };

@@ -1,15 +1,36 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
-import { getAllSprints } from "../config/api";
+import { getAllSprints, LOGIN_ENDPOINTS, apiRequest } from "../config/api";
 import ScrumMasterDashboard from "../components/scrum-master/ScrumMasterDashboard";
 import TeamOverview from "../components/scrum-master/TeamOverview";
 import SprintManagement from "../components/scrum-master/SprintManagement";
 import DependencyMonitor from "../components/scrum-master/DependencyMonitor";
-import Reports from "../components/scrum-master/Reports";
 import TaskAllocationHelper from "../components/scrum-master/TaskAllocationHelper";
 import DelayAlerts from "../components/scrum-master/DelayAlerts";
 import DeveloperResponseTracker from "../components/scrum-master/DeveloperResponseTracker";
+
+const resolveWorkspaceName = () => {
+  const directName = localStorage.getItem("workspaceName");
+  if (directName && directName.trim()) return directName;
+
+  try {
+    const storedUser = JSON.parse(localStorage.getItem("scrumai_user") || "{}");
+    const fallbackName =
+      storedUser.workspaceName ||
+      storedUser.workspace?.workspaceName ||
+      storedUser.workspace_name ||
+      "";
+    if (fallbackName) {
+      localStorage.setItem("workspaceName", fallbackName);
+      return fallbackName;
+    }
+  } catch {
+    // ignore malformed localStorage payloads
+  }
+
+  return "My Workspace";
+};
 
 export default function ScrumMasterPortal() {
   const { user, logout } = useAuth();
@@ -18,10 +39,31 @@ export default function ScrumMasterPortal() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [sprints, setSprints] = useState([]);
   const [selectedSprintId, setSelectedSprintId] = useState(null);
-  const workspaceName = localStorage.getItem("workspaceName") || "My Workspace";
+  const [delayedProjectsCount, setDelayedProjectsCount] = useState(0);
+  const workspaceName = resolveWorkspaceName();
 
   useEffect(() => {
     loadSprints();
+    loadDelayProjectsCount();
+  }, []);
+
+  const extractArray = (payload, key) => {
+    if (Array.isArray(payload)) return payload;
+    if (payload && Array.isArray(payload[key])) return payload[key];
+    if (payload && payload.data && Array.isArray(payload.data[key])) return payload.data[key];
+    if (payload && key === "data" && Array.isArray(payload.data)) return payload.data;
+    return [];
+  };
+
+  const loadDelayProjectsCount = useCallback(async () => {
+    try {
+      const response = await apiRequest(LOGIN_ENDPOINTS.delayAlerts.getProjects);
+      const projectList = extractArray(response, "data");
+      const count = projectList.filter((project) => Number(project?.delayedTaskCount || 0) > 0).length;
+      setDelayedProjectsCount(count);
+    } catch {
+      setDelayedProjectsCount(0);
+    }
   }, []);
 
   const loadSprints = async () => {
@@ -43,6 +85,14 @@ export default function ScrumMasterPortal() {
     }
   };
 
+  useEffect(() => {
+    const onWindowFocus = () => {
+      loadDelayProjectsCount();
+    };
+    window.addEventListener("focus", onWindowFocus);
+    return () => window.removeEventListener("focus", onWindowFocus);
+  }, [loadDelayProjectsCount]);
+
   const navigationItems = [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
     { id: "taskAllocation", label: "Task Allocation", icon: "🧩" },
@@ -50,8 +100,7 @@ export default function ScrumMasterPortal() {
     { id: "team", label: "Team Overview", icon: "👥" },
     { id: "sprints", label: "Sprint Management", icon: "🗓️" },
     { id: "dependencies", label: "Dependency Monitor", icon: "🔗" },
-    { id: "delays", label: "Delay Alerts", icon: "⏰" },
-    { id: "reports", label: "Reports", icon: "📋" }
+    { id: "delays", label: "Delay Alerts", icon: "⏰" }
   ];
 
   const renderContent = () => {
@@ -70,8 +119,6 @@ export default function ScrumMasterPortal() {
         return <DependencyMonitor />;
       case "delays":
         return <DelayAlerts />;
-      case "reports":
-        return <Reports />;
       default:
         return <ScrumMasterDashboard sprints={sprints} selectedSprintId={selectedSprintId} setSelectedSprintId={setSelectedSprintId} />;
     }
@@ -191,6 +238,9 @@ export default function ScrumMasterPortal() {
                   key={item.id}
                   onClick={() => {
                     setActiveTab(item.id);
+                    if (item.id === "delays") {
+                      loadDelayProjectsCount();
+                    }
                     setSidebarOpen(false);
                   }}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300 ${
@@ -200,7 +250,15 @@ export default function ScrumMasterPortal() {
                   }`}
                 >
                   <span className="text-lg">{item.icon}</span>
-                  <div className="font-medium">{item.label}</div>
+                  <div className="font-medium flex items-center gap-2">
+                    <span>{item.label}</span>
+                    {item.id === "delays" && delayedProjectsCount > 0 ? (
+                      <span
+                        className="w-2.5 h-2.5 rounded-full bg-red-500 border border-red-300 shadow-sm"
+                        aria-label="Delay alerts available"
+                      />
+                    ) : null}
+                  </div>
                 </button>
               ))}
             </nav>
@@ -215,7 +273,12 @@ export default function ScrumMasterPortal() {
               {navigationItems.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    if (item.id === "delays") {
+                      loadDelayProjectsCount();
+                    }
+                  }}
                   className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-300 ${
                     activeTab === item.id
                       ? "bg-gradient-to-r from-primaryDark to-primary text-white shadow-lg transform scale-105 ring-2 ring-primary/20"
@@ -223,7 +286,15 @@ export default function ScrumMasterPortal() {
                   }`}
                 >
                   <span className="text-xl">{item.icon}</span>
-                  <div className="font-semibold">{item.label}</div>
+                  <div className="font-semibold flex items-center gap-2">
+                    <span>{item.label}</span>
+                    {item.id === "delays" && delayedProjectsCount > 0 ? (
+                      <span
+                        className="w-2.5 h-2.5 rounded-full bg-red-500 border border-red-300 shadow-sm"
+                        aria-label="Delay alerts available"
+                      />
+                    ) : null}
+                  </div>
                 </button>
               ))}
             </nav>

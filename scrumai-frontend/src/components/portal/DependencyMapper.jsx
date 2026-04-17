@@ -493,13 +493,11 @@ export default function DependencyMapper() {
   }, [filteredRawTasks, projectDependencies, selectedProjectId, tasksMap, tasksWithDependents]);
 
   const stats = useMemo(() => {
-    const totalDependencies = tasksWithDependents.reduce((sum, task) => sum + task.dependencies.length, 0);
     const blockedCount = tasksWithDependents.filter((task) => task.dependencies.length > 0).length;
     const isolatedCount = components.filter((component) => component.taskIds.length === 1 && component.edgeCount === 0).length;
 
     return {
       totalTasks: tasksWithDependents.length,
-      totalDependencies,
       blockedCount,
       componentsCount: graphComponents.length,
       isolatedCount,
@@ -559,22 +557,14 @@ export default function DependencyMapper() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         <div className="bg-white border border-border rounded-xl p-4">
           <p className="text-textMuted text-sm">Total Tasks</p>
           <p className="text-2xl font-bold text-textPrimary">{stats.totalTasks}</p>
         </div>
         <div className="bg-white border border-border rounded-xl p-4">
-          <p className="text-textMuted text-sm">Total Dependencies</p>
-          <p className="text-2xl font-bold text-textPrimary">{dependencyRows.length}</p>
-        </div>
-        <div className="bg-white border border-border rounded-xl p-4">
           <p className="text-textMuted text-sm">Tasks With Dependencies</p>
           <p className="text-2xl font-bold text-textPrimary">{stats.blockedCount}</p>
-        </div>
-        <div className="bg-white border border-border rounded-xl p-4">
-          <p className="text-textMuted text-sm">Disconnected Groups</p>
-          <p className="text-2xl font-bold text-textPrimary">{stats.componentsCount}</p>
         </div>
         <div className="bg-white border border-border rounded-xl p-4">
           <p className="text-textMuted text-sm">Isolated Tasks</p>
@@ -624,7 +614,7 @@ export default function DependencyMapper() {
                   </div>
                 </div>
 
-                <div className="overflow-auto border border-border rounded-xl bg-surface/50 p-4">
+                <div className="overflow-x-auto overflow-y-hidden border border-border rounded-xl bg-surface/50 p-4">
                   <div
                     className="relative"
                     style={{ width: component.width, height: component.height, minWidth: "100%" }}

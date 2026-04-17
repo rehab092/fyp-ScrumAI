@@ -1,9 +1,32 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import { LOGIN_ENDPOINTS, apiRequest } from "../config/api";
 import DelayAlerts from "../components/scrum-master/DelayAlerts";
+import DependencyMonitor from "../components/scrum-master/DependencyMonitor";
 import TeamMemberDashboard from "../components/member-portal/TeamMemberDashboard";
+
+const resolveWorkspaceName = () => {
+  const directName = localStorage.getItem("workspaceName");
+  if (directName && directName.trim()) return directName;
+
+  try {
+    const storedUser = JSON.parse(localStorage.getItem("scrumai_user") || "{}");
+    const fallbackName =
+      storedUser.workspaceName ||
+      storedUser.workspace?.workspaceName ||
+      storedUser.workspace_name ||
+      "";
+    if (fallbackName) {
+      localStorage.setItem("workspaceName", fallbackName);
+      return fallbackName;
+    }
+  } catch {
+    // ignore malformed localStorage payloads
+  }
+
+  return "My Workspace";
+};
 
 export default function TeamMemberPortal() {
   const { user, logout } = useAuth();
@@ -13,6 +36,7 @@ export default function TeamMemberPortal() {
   const [memberData, setMemberData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [delayedProjectsCount, setDelayedProjectsCount] = useState(0);
   
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -21,9 +45,30 @@ export default function TeamMemberPortal() {
     capacityHours: 40,
   });
   const [saving, setSaving] = useState(false);
-  const workspaceName = localStorage.getItem("workspaceName") || "My Workspace";
+  const workspaceName = resolveWorkspaceName();
+
+  const extractArray = (payload, key) => {
+    if (Array.isArray(payload)) return payload;
+    if (payload && Array.isArray(payload[key])) return payload[key];
+    if (payload && payload.data && Array.isArray(payload.data[key])) return payload.data[key];
+    if (payload && key === "data" && Array.isArray(payload.data)) return payload.data;
+    return [];
+  };
+
+  const loadDelayProjectsCount = useCallback(async () => {
+    try {
+      const response = await apiRequest(LOGIN_ENDPOINTS.delayAlerts.getProjects);
+      const projectList = extractArray(response, "data");
+      const count = projectList.filter((project) => Number(project?.delayedTaskCount || 0) > 0).length;
+      setDelayedProjectsCount(count);
+    } catch {
+      setDelayedProjectsCount(0);
+    }
+  }, []);
 
   useEffect(() => {
+    loadDelayProjectsCount();
+
     const fetchMemberData = async () => {
       try {
         setLoading(true);
@@ -123,7 +168,15 @@ export default function TeamMemberPortal() {
     };
 
     fetchMemberData();
-  }, [user]);
+  }, [user, loadDelayProjectsCount]);
+
+  useEffect(() => {
+    const onWindowFocus = () => {
+      loadDelayProjectsCount();
+    };
+    window.addEventListener("focus", onWindowFocus);
+    return () => window.removeEventListener("focus", onWindowFocus);
+  }, [loadDelayProjectsCount]);
 
   const handleUpdateProfile = async () => {
     try {
@@ -202,10 +255,11 @@ export default function TeamMemberPortal() {
   };
 
   const navigationItems = [
-    { id: "dashboard", label: "Dashboard", icon: "�" },
+    { id: "dashboard", label: "Dashboard", icon: "📊" },
     { id: "assignedTasks", label: "Assigned Tasks", icon: "✅" },
     { id: "taskTable", label: "Task Table", icon: "📋" },
     { id: "delays", label: "Delay Alerts", icon: "⏰" },
+    { id: "dependencies", label: "Dependency Mapper", icon: "🔗" },
     { id: "skills", label: "My Skills", icon: "🎯" },
     { id: "profile", label: "Profile", icon: "👤" },
   ];
@@ -227,6 +281,8 @@ export default function TeamMemberPortal() {
         return <TaskTableContent memberData={memberData} />;
       case "delays":
         return <DelayAlerts />;
+      case "dependencies":
+        return <DependencyMonitor />;
       case "skills":
         return (
           <SkillsContent 
@@ -330,7 +386,7 @@ export default function TeamMemberPortal() {
 
       {sidebarOpen && <div className="lg:hidden fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarOpen(false)} />}
 
-      <div className="flex">
+      <div className="flex h-screen overflow-hidden">
         <motion.aside
           initial={false}
           animate={{ x: sidebarOpen ? 0 : -280 }}
@@ -349,11 +405,22 @@ export default function TeamMemberPortal() {
               {navigationItems.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    if (item.id === "delays") {
+                      loadDelayProjectsCount();
+                    }
+                    setSidebarOpen(false);
+                  }}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === item.id ? "bg-white/20 text-white shadow-lg" : "text-white/70 hover:bg-white/10 hover:text-white"}`}
                 >
                   <span className="text-xl">{item.icon}</span>
-                  <span className="font-medium">{item.label}</span>
+                  <span className="font-medium flex items-center gap-2">
+                    <span>{item.label}</span>
+                    {item.id === "delays" && delayedProjectsCount > 0 ? (
+                      <span className="w-2.5 h-2.5 rounded-full bg-red-500 border border-red-300 shadow-sm" aria-label="Delay alerts available" />
+                    ) : null}
+                  </span>
                 </button>
               ))}
             </nav>
@@ -366,19 +433,29 @@ export default function TeamMemberPortal() {
               {navigationItems.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    if (item.id === "delays") {
+                      loadDelayProjectsCount();
+                    }
+                  }}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === item.id ? "bg-gradient-to-r from-primary to-primaryDark text-white shadow-lg" : "text-textSecondary hover:bg-surface hover:text-textPrimary"}`}
                 >
                   <span className="text-xl">{item.icon}</span>
-                  <span className="font-medium">{item.label}</span>
+                  <span className="font-medium flex items-center gap-2">
+                    <span>{item.label}</span>
+                    {item.id === "delays" && delayedProjectsCount > 0 ? (
+                      <span className="w-2.5 h-2.5 rounded-full bg-red-500 border border-red-300 shadow-sm" aria-label="Delay alerts available" />
+                    ) : null}
+                  </span>
                 </button>
               ))}
             </nav>
           </div>
         </aside>
 
-        <main className="flex-1 p-6">
-          <motion.div key={activeTab} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="max-w-6xl mx-auto">
+        <main className="flex-1 min-w-0 overflow-y-auto p-6">
+          <motion.div key={activeTab} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="max-w-7xl mx-auto">
             {renderContent()}
           </motion.div>
         </main>

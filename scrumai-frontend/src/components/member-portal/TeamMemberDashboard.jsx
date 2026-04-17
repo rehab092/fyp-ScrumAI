@@ -251,21 +251,16 @@ export default function TeamMemberDashboard() {
             animate={{ opacity: 1, y: 0 }}
             className="bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl border border-slate-600 p-10 mb-8 shadow-lg"
           >
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-              <div className="flex flex-col justify-center">
-                <p className="text-xs font-semibold text-slate-300 uppercase tracking-widest mb-3">
-                  Project Name
-                </p>
-                <p className="text-2xl font-bold text-white">
-                  {selectedProject.project_name || selectedProject.name}
-                </p>
-              </div>
-              <div className="flex flex-col justify-center">
-                <p className="text-xs font-semibold text-slate-300 uppercase tracking-widest mb-3">
-                  Status
-                </p>
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-8">
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
+                  <p className="text-3xl md:text-4xl font-bold text-white leading-tight truncate">
+                    {selectedProject.project_name || selectedProject.name}
+                  </p>
+                </div>
+
                 <span
-                  className={`inline-block px-4 py-2 rounded-full text-sm font-semibold w-fit ${
+                  className={`inline-block mt-4 px-4 py-2 rounded-full text-sm font-semibold w-fit ${
                     selectedProject.status === "Active"
                       ? "bg-green-100 text-green-800"
                       : selectedProject.status === "Planning"
@@ -276,27 +271,10 @@ export default function TeamMemberDashboard() {
                   {selectedProject.status || "Active"}
                 </span>
               </div>
-              <div className="flex flex-col justify-center">
-                <p className="text-xs font-semibold text-slate-300 uppercase tracking-widest mb-3">
-                  Priority
-                </p>
-                <span
-                  className={`inline-block px-4 py-2 rounded-full text-sm font-semibold w-fit ${
-                    selectedProject.priority === "High"
-                      ? "bg-red-100 text-red-800"
-                      : selectedProject.priority === "Medium"
-                      ? "bg-yellow-100 text-yellow-800"
-                      : "bg-green-100 text-green-800"
-                  }`}
-                >
-                  {selectedProject.priority || "Medium"}
-                </span>
-              </div>
-              <div className="flex flex-col justify-center">
-                <p className="text-xs font-semibold text-slate-300 uppercase tracking-widest mb-3">
-                  Stories Count
-                </p>
-                <p className="text-4xl font-bold text-white">{totalStories}</p>
+
+              <div className="flex flex-col items-start md:items-end gap-2 shrink-0 self-start md:self-auto md:mt-1">
+                <p className="text-xs font-semibold text-slate-300 uppercase tracking-widest">Stories</p>
+                <p className="text-xl font-bold text-white">{totalStories}</p>
               </div>
             </div>
             {selectedProject.project_description && (

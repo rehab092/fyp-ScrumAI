@@ -4,21 +4,40 @@ import { useAuth } from "../contexts/AuthContext";
 import ProductOwnerDashboard from "../components/product-owner/ProductOwnerDashboard";
 import AddTaskToSprint from "../components/product-owner/AddTaskToSprint";
 import BacklogManager from "../components/portal/BacklogManager";
-import Reports from "../components/portal/Reports";
+
+const resolveWorkspaceName = () => {
+  const directName = localStorage.getItem("workspaceName");
+  if (directName && directName.trim()) return directName;
+
+  try {
+    const storedUser = JSON.parse(localStorage.getItem("scrumai_user") || "{}");
+    const fallbackName =
+      storedUser.workspaceName ||
+      storedUser.workspace?.workspaceName ||
+      storedUser.workspace_name ||
+      "";
+    if (fallbackName) {
+      localStorage.setItem("workspaceName", fallbackName);
+      return fallbackName;
+    }
+  } catch {
+    // ignore malformed localStorage payloads
+  }
+
+  return "My Workspace";
+};
 
 export default function ProductOwnerPortal() {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const workspaceName = localStorage.getItem("workspaceName") || "My Workspace";
+  const workspaceName = resolveWorkspaceName();
 
   const navigationItems = [
     { id: "dashboard", label: "Dashboard", icon: "📊", description: "Projects & stories" },
     { id: "backlog", label: "Backlog", icon: "📋", description: "Project backlog" },
-    { id: "addtask", label: "Add Task to Sprint", icon: "➕", description: "Assign stories to sprint" },
-    
-    { id: "reports", label: "Reports", icon: "📈", description: "Reports & metrics" }
+    { id: "addtask", label: "Prioritize Tasks", icon: "🎯", description: "Assign stories to sprint" }
   ];
 
   const [storyPoints, setStoryPoints] = useState({});
@@ -31,8 +50,6 @@ export default function ProductOwnerPortal() {
         return <AddTaskToSprint />;
       case "backlog":
         return <BacklogManager />;
-      case "reports":
-        return <Reports />;
       default:
         return <ProductOwnerDashboard onNavigateToBacklog={() => setActiveTab("backlog")} />;
     }
