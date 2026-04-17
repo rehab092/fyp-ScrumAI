@@ -34,4 +34,38 @@ urlpatterns = [
     
     # Debug: Check all sprints in workspace
     path('debug/sprints/', views.debug_sprints_in_workspace, name='debug_sprints'),
+    
+    # ==================== ANALYTICS ENDPOINTS ====================
+    
+    # Sprint Completion Rate
+    path('analytics/sprint-completion/', views.get_sprint_completion_rate, name='get_sprint_completion_rate'),
+    
+    # Completion Trend (Daily/Weekly)
+    path('analytics/completion-trend/', views.get_daily_completion_trend, name='get_daily_completion_trend'),
+    
+    # Productivity Metrics (Estimated vs Actual)
+    path('analytics/productivity/', views.get_productivity_metrics, name='get_productivity_metrics'),
+    
+    # Developer Workload Utilization
+    path('analytics/developer-utilization/', views.get_developer_utilization, name='get_developer_utilization'),
+    
+    # Delayed Tasks
+    path('analytics/delayed-tasks/', views.get_delayed_tasks, name='get_delayed_tasks'),
+    
+    # Product Owner Overview (All Projects)
+    path('analytics/po-overview/', views.get_po_analytics_overview, name='get_po_analytics_overview'),
+    
+    # Multi-Sprint Comparison
+    path('analytics/compare-sprints/', views.get_multi_sprint_comparison, name='get_multi_sprint_comparison'),
+    
+    # ==================== PROJECT ANALYTICS ====================
+    
+    # Project Statistics
+    path('project-analytics/<int:project_id>/stats/', views.get_project_stats, name='get_project_stats'),
+    
+    # Project User Stories
+    path('project-analytics/<int:project_id>/stories/', views.get_project_user_stories, name='get_project_user_stories'),
+    
+    # All Projects Analytics
+    path('project-analytics/all/', views.get_all_projects_analytics, name='get_all_projects_analytics'),
 ]

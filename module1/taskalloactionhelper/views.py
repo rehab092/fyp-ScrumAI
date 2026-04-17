@@ -30,6 +30,7 @@ from taskalloactionhelper.models import (
 )
 from taskalloactionhelper.services.suggestion_engine import AssignmentSuggestionEngine
 from taskalloactionhelper.services.skill_matcher import SkillMatcher
+from taskalloactionhelper.services.analytics_service import ProjectAnalyticsService
 from assignment_module.models import Notification
 
 
@@ -1773,4 +1774,457 @@ def get_developer_responses(request):
             'success': False,
             'error': f'Error fetching developer responses: {str(e)}',
             'error_type': type(e).__name__
+        }, status=500)
+
+
+# ==================== ANALYTICS: Sprint Completion Rate ====================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_sprint_completion_rate(request):
+    """
+    GET /api/module2/analytics/sprint/<sprint_id>/completion-rate/
+    
+    Get sprint completion percentage and task breakdown.
+    Dashboard chart: Sprint Completion Rate (%)
+    """
+    try:
+        sprint_id = request.GET.get('sprint_id')
+        
+        if not sprint_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing sprint_id parameter'
+            }, status=400)
+        
+        from taskalloactionhelper.services.analytics_service import SprintAnalyticsService
+        
+        analytics = SprintAnalyticsService.get_sprint_completion_rate(sprint_id)
+        
+        if not analytics:
+            return JsonResponse({
+                'success': False,
+                'error': 'Sprint not found'
+            }, status=404)
+        
+        return JsonResponse({
+            'success': True,
+            'data': analytics,
+            'chart_type': 'bar',
+            'chart_title': f"Sprint Completion Rate - {analytics['sprint_name']}",
+        }, status=200)
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+# ==================== ANALYTICS: Daily Completion Trend ====================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_daily_completion_trend(request):
+    """
+    GET /api/module2/analytics/sprint/<sprint_id>/daily-trend/
+    
+    Get tasks completed per day during sprint.
+    Dashboard chart: Daily/Weekly Completion Trend
+    """
+    try:
+        sprint_id = request.GET.get('sprint_id')
+        trend_type = request.GET.get('type', 'daily')  # daily or weekly
+        
+        if not sprint_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing sprint_id parameter'
+            }, status=400)
+        
+        from taskalloactionhelper.services.analytics_service import SprintAnalyticsService
+        
+        if trend_type == 'weekly':
+            trend_data = SprintAnalyticsService.get_weekly_completion_trend(sprint_id)
+            chart_title = "Weekly Task Completion Trend"
+            x_label = "Week"
+        else:
+            trend_data = SprintAnalyticsService.get_daily_completion_trend(sprint_id)
+            chart_title = "Daily Task Completion Trend"
+            x_label = "Date"
+        
+        return JsonResponse({
+            'success': True,
+            'data': trend_data,
+            'chart_type': 'line',
+            'chart_title': chart_title,
+            'x_axis_label': x_label,
+            'y_axis_label': 'Tasks Completed',
+        }, status=200)
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+# ==================== ANALYTICS: Productivity Metrics ====================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_productivity_metrics(request):
+    """
+    GET /api/module2/analytics/sprint/<sprint_id>/productivity/
+    
+    Get estimated vs actual hours and productivity statistics.
+    Dashboard chart: Productivity Metrics (Estimated vs Actual)
+    """
+    try:
+        sprint_id = request.GET.get('sprint_id')
+        
+        if not sprint_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing sprint_id parameter'
+            }, status=400)
+        
+        from taskalloactionhelper.services.analytics_service import SprintAnalyticsService
+        
+        metrics = SprintAnalyticsService.get_productivity_metrics(sprint_id)
+        
+        if not metrics:
+            return JsonResponse({
+                'success': False,
+                'error': 'Sprint not found'
+            }, status=404)
+        
+        return JsonResponse({
+            'success': True,
+            'data': metrics,
+            'chart_type': 'mixed',  # Bar for estimated vs actual, line for completion %
+            'chart_title': f"Productivity Metrics - {metrics['sprint_name']}",
+        }, status=200)
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+# ==================== ANALYTICS: Developer Workload Utilization ====================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_developer_utilization(request):
+    """
+    GET /api/module2/analytics/sprint/<sprint_id>/developer-utilization/
+    
+    Get developer workload utilization percentages.
+    Dashboard chart: Developer Workload Utilization (%)
+    """
+    try:
+        sprint_id = request.GET.get('sprint_id')
+        
+        if not sprint_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing sprint_id parameter'
+            }, status=400)
+        
+        from taskalloactionhelper.services.analytics_service import SprintAnalyticsService
+        
+        workloads = SprintAnalyticsService.get_developer_workload_utilization(sprint_id)
+        
+        return JsonResponse({
+            'success': True,
+            'data': workloads,
+            'chart_type': 'bar',
+            'chart_title': 'Developer Workload Utilization',
+            'total_developers': len(workloads),
+            'average_utilization': round(sum(w['utilization_percentage'] for w in workloads) / len(workloads), 2) if workloads else 0,
+        }, status=200)
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+# ==================== ANALYTICS: Delayed Tasks ====================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_delayed_tasks(request):
+    """
+    GET /api/module2/analytics/sprint/<sprint_id>/delayed-tasks/
+    
+    Get count and list of delayed tasks.
+    Dashboard display: Delayed Tasks Count & Details
+    """
+    try:
+        sprint_id = request.GET.get('sprint_id')
+        
+        if not sprint_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing sprint_id parameter'
+            }, status=400)
+        
+        from taskalloactionhelper.services.analytics_service import SprintAnalyticsService
+        
+        delayed_data = SprintAnalyticsService.get_delayed_tasks_count(sprint_id)
+        
+        if not delayed_data:
+            return JsonResponse({
+                'success': False,
+                'error': 'Sprint not found'
+            }, status=404)
+        
+        return JsonResponse({
+            'success': True,
+            'data': delayed_data,
+            'chart_type': 'stat_card',
+            'severity': 'high' if delayed_data['delayed_count'] > 0 else 'low',
+        }, status=200)
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+# ==================== ANALYTICS: Product Owner Overview (All Projects) ====================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_po_analytics_overview(request):
+    """
+    GET /api/module2/analytics/po-overview/
+    
+    Get aggregated analytics across all projects for a Product Owner.
+    Used in Admin Dashboard to show overall productivity.
+    
+    Query params:
+    - po_id (optional): Filter by specific Product Owner
+    - include_sprints: Include full sprint breakdowns (true/false)
+    """
+    try:
+        workspace_id = request.headers.get('Workspace-ID')
+        po_id = request.GET.get('po_id')
+        include_sprints = request.GET.get('include_sprints', 'false').lower() == 'true'
+        
+        if not workspace_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing Workspace-ID header'
+            }, status=400)
+        
+        from taskalloactionhelper.services.analytics_service import SprintAnalyticsService
+        
+        # Get overall analytics
+        overview = SprintAnalyticsService.get_product_owner_analytics(
+            workspace_id=workspace_id,
+            po_id=po_id
+        )
+        
+        # Optionally expand sprint details
+        if not include_sprints:
+            overview.pop('sprints', None)
+        
+        return JsonResponse({
+            'success': True,
+            'data': overview,
+            'dashboard_section': 'admin_overview',
+        }, status=200)
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+# ==================== ANALYTICS: Multi-Sprint Comparison ====================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_multi_sprint_comparison(request):
+    """
+    GET /api/module2/analytics/compare-sprints/
+    
+    Compare metrics across multiple sprints.
+    Returns completion rates, productivity, workload for each sprint.
+    
+    Query params:
+    - sprint_ids: Comma-separated list of sprint IDs (e.g., "1,2,3")
+    """
+    try:
+        sprint_ids_param = request.GET.get('sprint_ids', '')
+        
+        if not sprint_ids_param:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing sprint_ids parameter (comma-separated list)'
+            }, status=400)
+        
+        # Parse sprint IDs
+        try:
+            sprint_ids = [int(sid.strip()) for sid in sprint_ids_param.split(',')]
+        except ValueError:
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid sprint_ids format - must be integers'
+            }, status=400)
+        
+        from taskalloactionhelper.services.analytics_service import SprintAnalyticsService
+        
+        sprints_comparison = []
+        
+        for sprint_id in sprint_ids:
+            try:
+                completion = SprintAnalyticsService.get_sprint_completion_rate(sprint_id)
+                productivity = SprintAnalyticsService.get_productivity_metrics(sprint_id)
+                
+                if completion and productivity:
+                    sprints_comparison.append({
+                        'sprint_id': sprint_id,
+                        'sprint_name': completion['sprint_name'],
+                        'completion_percentage': completion['completion_percentage'],
+                        'total_tasks': completion['total_tasks'],
+                        'completed_tasks': completion['completed_tasks'],
+                        'estimated_hours': productivity['estimated_total_hours'],
+                        'completed_hours': productivity['completed_hours'],
+                        'completion_rate': productivity['completion_percentage'],
+                    })
+            except Exception as single_sprint_error:
+                # Log but continue with other sprints
+                print(f"Error processing sprint {sprint_id}: {str(single_sprint_error)}")
+                continue
+        
+        return JsonResponse({
+            'success': True,
+            'data': sprints_comparison,
+            'comparison_count': len(sprints_comparison),
+            'chart_type': 'comparison',
+        }, status=200)
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+# ==================== PROJECT ANALYTICS ====================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_project_stats(request, project_id):
+    """
+    GET /api/module2/project-analytics/<project_id>/stats/
+    
+    Get stats for a specific project including user stories and status breakdown.
+    
+    Returns:
+    - total: Total number of user stories
+    - in_progress: Count of in-progress stories
+    - completed: Count of completed stories
+    - done: Count of done stories
+    - delayed: Count of delayed stories
+    - completion_rate: Overall completion percentage
+    """
+    try:
+        workspace_id = request.headers.get('Workspace-ID')
+        
+        if not workspace_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing Workspace-ID header'
+            }, status=400)
+        
+        stats = ProjectAnalyticsService.get_project_stats(project_id, workspace_id)
+        
+        return JsonResponse({
+            'success': True,
+            'data': stats
+        }, status=200)
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_project_user_stories(request, project_id):
+    """
+    GET /api/module2/project-analytics/<project_id>/stories/
+    
+    Get all user stories for a project with status information.
+    
+    Returns:
+    - List of user stories with id, title, status, priority
+    """
+    try:
+        workspace_id = request.headers.get('Workspace-ID')
+        
+        if not workspace_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing Workspace-ID header'
+            }, status=400)
+        
+        stories = ProjectAnalyticsService.get_project_user_stories(project_id, workspace_id)
+        
+        return JsonResponse({
+            'success': True,
+            'data': stories,
+            'count': len(stories)
+        }, status=200)
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_all_projects_analytics(request):
+    """
+    GET /api/module2/project-analytics/all/
+    
+    Get analytics for all projects in the workspace.
+    
+    Returns:
+    - List of projects with their stats
+    """
+    try:
+        workspace_id = request.headers.get('Workspace-ID')
+        
+        if not workspace_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing Workspace-ID header'
+            }, status=400)
+        
+        projects_stats = ProjectAnalyticsService.get_all_projects_stats(workspace_id)
+        
+        return JsonResponse({
+            'success': True,
+            'data': projects_stats,
+            'project_count': len(projects_stats)
+        }, status=200)
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
         }, status=500)
