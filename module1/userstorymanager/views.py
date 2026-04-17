@@ -17,6 +17,7 @@ import time
 import uuid
 from openai import OpenAI
 from .jwt_utils import generate_jwt_token
+from assignment_module.models import TeamMember
 
 # =========================
 # OpenAI setup (v1.0.0+)
@@ -162,6 +163,27 @@ def parse_or_raise(raw: str) -> dict:
     return json.loads(cleaned)
 
 
+def get_allowed_team_skills():
+    skills = []
+    seen = set()
+
+    for member_skills in TeamMember.objects.all().values_list('skills', flat=True):
+        if isinstance(member_skills, str):
+            candidate_skills = [member_skills]
+        elif isinstance(member_skills, (list, tuple, set)):
+            candidate_skills = list(member_skills)
+        else:
+            candidate_skills = []
+
+        for skill in candidate_skills:
+            skill_name = str(skill).strip()
+            if skill_name and skill_name not in seen:
+                seen.add(skill_name)
+                skills.append(skill_name)
+
+    return skills
+
+
 # =========================
 # ProductOwner CRUD + Login
 # =========================
@@ -297,6 +319,8 @@ def upload_user_story(request):
         if not product_owner:
             return JsonResponse({'error': 'Project has no linked ProductOwner'}, status=400)
 
+        allowed_skills = get_allowed_team_skills()
+
         # --- Parse multi-line input (dedupe but keep order) ---
         raw_lines = [ln.strip() for ln in stories_tx.splitlines()]
         seen, story_lines = set(), []
@@ -353,14 +377,16 @@ def upload_user_story(request):
         # --------- PROMPTS (per-story priority) ----------
         def build_block_prompt(lines):
             joined = "\n".join(lines)
+            skills_text = ", ".join(allowed_skills) if allowed_skills else "No skills available"
             return f"""
 You are an Agile story decomposition expert. Return ONLY valid JSON, NO markdown or code blocks.
 
 CRITICAL RULES:
 1. Extract priority from format "story | Priority" - MUST be one of: High, Medium, Low
-2. For EVERY task, MUST include: task_number (string), task (short string <=100 chars), subtasks (array of strings), skills (array), estimated_hours (number)
+2. For EVERY task, MUST include: task_number (string), task (short string <=100 chars), subtasks (array of strings), skills (array with exactly one skill), estimated_hours (number)
 3. Subtasks should be realistic technical steps needed to complete the task
-4. Skills must be specific technical skills like: Backend, Frontend, Database, API, Testing, Docs, etc.
+4. Skills must be chosen ONLY from this allowed list of team-member skills: {skills_text}
+5. Do not invent any other skills
 5. estimated_hours MUST be a number (integer or decimal): 1, 2.5, 4, 6, 8, 12, 20 etc
 6. Generate 3-5 essential tasks per story
 7. ECHO the EXACT original line as "story" field
@@ -375,9 +401,10 @@ You MUST return valid JSON in this exact format - no escaping, no markdown:
       "story": "EXACT original line here",
       "priority": "High",
       "tasks": [
-        {{"task_number": "1", "task": "Setup backend API endpoint", "subtasks": ["Create route", "Add validation", "Write tests"], "skills": ["Backend", "API"], "estimated_hours": 4}},
-        {{"task_number": "2", "task": "Create database schema", "subtasks": ["Design tables", "Add indexes", "Migration"], "skills": ["Database"], "estimated_hours": 6}},
-        {{"task_number": "3", "task": "Build frontend UI component", "subtasks": ["Design layout", "Write JSX", "Add styling"], "skills": ["Frontend", "React"], "estimated_hours": 5}}
+                {{"task_number": "1", "task": "Implement user authentication API", "subtasks": ["Create login endpoint", "Add JWT validation"], "skills": ["Backend"], "estimated_hours": 6}},
+                {{"task_number": "2", "task": "Create user login form", "subtasks": [], "skills": ["Frontend"], "estimated_hours": 4}},
+                {{"task_number": "3", "task": "Setup user database tables", "subtasks": ["Create migration", "Add indexes"], "skills": ["Database"], "estimated_hours": 3}},
+                {{"task_number": "4", "task": "Add input validation", "subtasks": [], "skills": ["Backend"], "estimated_hours": 2}}
       ]
     }}
   ]
@@ -408,8 +435,10 @@ You MUST return valid JSON in this exact format:
       "story": "{line}",
       "priority": "High",
       "tasks": [
-        {{"task_number": "1", "task": "Task description", "subtasks": ["Step 1", "Step 2"], "skills": ["Skill1"], "estimated_hours": 4}},
-        {{"task_number": "2", "task": "Task 2 description", "subtasks": ["Step A", "Step B"], "skills": ["Skill2"], "estimated_hours": 6}}
+        {{"task_number": "1", "task": "Implement user authentication API", "subtasks": ["Create login endpoint", "Add JWT validation"], "skills": ["Backend", "API"], "estimated_hours": 6}},
+        {{"task_number": "2", "task": "Create user login form", "subtasks": [], "skills": ["Frontend", "React"], "estimated_hours": 4}},
+        {{"task_number": "3", "task": "Setup user database tables", "subtasks": ["Create migration", "Add indexes"], "skills": ["Database"], "estimated_hours": 3}},
+        {{"task_number": "4", "task": "Add input validation", "subtasks": [], "skills": ["Backend"], "estimated_hours": 2}}
       ]
     }}
   ]
@@ -648,6 +677,8 @@ def create_story_with_llm(request):
         if not product_owner:
             return JsonResponse({'error': 'Project has no linked ProductOwner'}, status=400)
 
+        allowed_skills = get_allowed_team_skills()
+
         # Create the UserStory
         us = UserStory.objects.create(
             owner=product_owner,
@@ -671,16 +702,65 @@ def create_story_with_llm(request):
         story_hours_tracking = {}
 
         try:
+            skills_text = ", ".join(allowed_skills) if allowed_skills else "No skills available"
             prompt = f"""
 You are an Agile story decomposition expert. Return ONLY valid JSON, NO markdown or code blocks.
 
 CRITICAL RULES:
-1. For EVERY task, MUST include: task_number (string), task (short string <=100 chars), subtasks (array of strings), skills (array), estimated_hours (number)
-2. Subtasks should be realistic technical steps needed to complete the task
-3. Skills must be specific: Backend, Frontend, Database, API, Testing, Docs, DevOps, etc.
-4. estimated_hours MUST be a number (integer or decimal): 1, 2.5, 4, 6, 8, 12, 20 etc
-5. Generate 3-5 essential tasks for this story
-6. ECHO the story line EXACTLY as given
+1. For EVERY task, MUST include: task_number (string), task (short string <=100 chars), subtasks (array of strings), skills (array with exactly one skill), estimated_hours (number)
+
+2. Skills must be chosen ONLY from this allowed list of team-member skills: {skills_text}
+3. Do not invent any other skills
+
+4. Generate tasks in the SAME STYLE as professional software backlog tasks:
+   - concise
+   - action-oriented
+   - implementation-focused
+   - one clear technical outcome per task
+   - realistic for Agile teams
+
+5. Task wording must follow patterns like:
+   - Design database schema for ...
+   - Implement backend API endpoint for ...
+   - Create UI component for ...
+   - Integrate frontend with backend API
+   - Configure authentication for ...
+   - Validate input data for ...
+   - Verify ... through testing/logging/metrics
+   - Update documentation for ...
+   - Review and finalize ...
+
+6. DO NOT generate vague tasks such as:
+   - Work on frontend
+   - Do backend
+   - Handle logic
+   - Fix stuff
+   - Complete feature
+
+7. Each task must be:
+   - specific and standalone
+   - written as a single professional backlog task
+   - similar in tone to Jira / software project task titles
+   - not conversational
+   - not too generic
+   - not too detailed like a paragraph
+   - start the task with a strong action verb like Design, Implement, Create, Integrate, Configure, Validate, Review, Update, Verify
+8. Subtasks should be realistic technical steps needed to complete the task.
+
+9. Skills must be chosen only from the allowed team-member skills list above.
+
+10. estimated_hours MUST be a number (integer or decimal): 1, 2.5, 4, 6, 8, 12, 20 etc.
+
+11. Generate 3-5 essential tasks for this story.
+
+12. ECHO the story line EXACTLY as given.
+
+13. Make task names closely resemble examples like:
+   - Implement backend API endpoint for fetching resources data
+   - Design wireframes for Resources page based on new Broker design styles
+   - Integrate reporting UI component with backend API
+   - Verify performance improvements
+   - Configure authentication and authorization for accessing published files
 
 Story to decompose:
 {story_text}
@@ -692,9 +772,9 @@ You MUST return valid JSON in this exact format:
       "story": "{story_text}",
       "priority": "{priority}",
       "tasks": [
-        {{"task_number": "1", "task": "Task description", "subtasks": ["Step 1", "Step 2"], "skills": ["Skill1"], "estimated_hours": 4}},
-        {{"task_number": "2", "task": "Task 2 description", "subtasks": ["Step A", "Step B"], "skills": ["Skill2"], "estimated_hours": 6}},
-        {{"task_number": "3", "task": "Task 3", "subtasks": ["Part 1"], "skills": ["Skill3"], "estimated_hours": 5}}
+                {{"task_number": "1", "task": "Task description", "subtasks": ["Step 1", "Step 2"], "skills": ["Backend"], "estimated_hours": 4}},
+                {{"task_number": "2", "task": "Task 2 description", "subtasks": ["Step A", "Step B"], "skills": ["Frontend"], "estimated_hours": 6}},
+                {{"task_number": "3", "task": "Task 3", "subtasks": ["Part 1"], "skills": ["Database"], "estimated_hours": 5}}
       ]
     }}
   ]
@@ -703,8 +783,6 @@ You MUST return valid JSON in this exact format:
             
             raw = call_llm(prompt, max_tokens=1000)
             parsed = parse_or_raise(raw)
-            all_stories = parsed.get("stories", [])
-
             if all_stories:
                 for story_item in all_stories:
                     tasks_list = story_item.get("tasks", [])
@@ -1652,27 +1730,12 @@ def get_userstories_by_project(request, project_id):
             for story in stories:
                 # Get all tasks/subtasks for this story
                 tasks = list(Backlog.objects.filter(user_story_id=story.id).values(
-                    'task_id', 'tasks', 'subtasks', 'skills_required', 'estimated_hours', 'status'
+                    'task_id', 'tasks', 'subtasks', 'skills_required', 'estimated_hours'
                 ))
                 
                 # Calculate total story points from tasks
                 total_hours = sum(task.get('estimated_hours', 0) or 0 for task in tasks)
                 story_points = int(total_hours)
-                
-                # Calculate overall status based on child tasks
-                if tasks:
-                    task_statuses = [task.get('status', 'pending') for task in tasks]
-                    # If all completed → Completed
-                    if all(s == 'Completed' for s in task_statuses):
-                        overall_status = 'Completed'
-                    # If any in progress → In Progress
-                    elif any(s == 'In Progress' for s in task_statuses):
-                        overall_status = 'In Progress'
-                    # Otherwise → Ready
-                    else:
-                        overall_status = 'Ready'
-                else:
-                    overall_status = 'Ready'
                 
                 # Build story response
                 story_data = {
@@ -1684,7 +1747,7 @@ def get_userstories_by_project(request, project_id):
                     'priority': story.priority,
                     'project_name': story.project_name,
                     'project_id': story.project_id,
-                    'status': overall_status,
+                    'status': story.status if hasattr(story, 'status') else 'Ready',
                     'story_points': story_points,
                     'task_count': len(tasks),
                     'tasks': tasks

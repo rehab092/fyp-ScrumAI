@@ -3,6 +3,8 @@ from . import views
 
 urlpatterns = [
     path('create/', views.CreateSprintView.as_view(), name='create_sprint'),
+    path('<int:sprint_id>/edit/', views.EditSprintView.as_view(), name='edit_sprint'),
+    path('<int:sprint_id>/delete/', views.DeleteSprintView.as_view(), name='delete_sprint'),
     path('list/', views.ListSprintsView.as_view(), name='list_sprints'),
     path('<int:sprint_id>/backlog/', views.SprintBacklogView.as_view(), name='sprint_backlog'),
     path('<int:sprint_id>/add-task/', views.AddTaskView.as_view(), name='add_task'),

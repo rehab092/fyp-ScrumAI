@@ -3,6 +3,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.views import View
+from django.db import connection
 import json
 from .models import Sprint, SprintItem
 from userstorymanager.models import Backlog, UserStory, SprintAssignment
@@ -34,13 +35,11 @@ def load_dependencies(project_id):
     return result
 
 def get_backlog_tasks(project_id):
-    # Exclude tasks already in active sprint items
-    active_sprint_task_ids = SprintItem.objects.filter(
-        sprint__is_active=True
-    ).values_list('task__task_id', flat=True)
+    # Exclude tasks already added to any sprint items
+    sprint_task_ids = SprintItem.objects.values_list('task__task_id', flat=True)
     tasks = Backlog.objects.filter(
         project_id=project_id
-    ).exclude(task_id__in=active_sprint_task_ids).select_related('user_story')
+    ).exclude(task_id__in=sprint_task_ids).select_related('user_story')
     result = []
     priority_map = {'high': 3, 'medium': 2, 'low': 1}
 
@@ -265,6 +264,35 @@ def run_greedy_fallback(tasks, dependencies, capacity):
     return [t['task_id'] for t in selected]
 
 
+def enforce_skill_limit(selected_task_ids, task_pool, max_skills=10):
+    """Keep selected tasks within a maximum number of unique skills."""
+    if not selected_task_ids:
+        return []
+
+    tasks_by_id = {t['task_id']: t for t in task_pool}
+    selected_tasks = [tasks_by_id[tid] for tid in selected_task_ids if tid in tasks_by_id]
+
+    # Prefer keeping higher-priority, lower-effort tasks.
+    selected_tasks = sorted(
+        selected_tasks,
+        key=lambda t: (
+            -(float(t.get('priority_score') or 0)),
+            float(t.get('story_points') or 0),
+            float(t.get('estimated_hours') or 0),
+        )
+    )
+
+    kept = []
+    used_skills = set()
+    for task in selected_tasks:
+        task_skills = normalize_skills(task.get('skills_required'))
+        if len(used_skills | task_skills) <= max_skills:
+            kept.append(task['task_id'])
+            used_skills |= task_skills
+
+    return kept
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class CreateSprintView(View):
     def post(self, request):
@@ -293,7 +321,7 @@ class CreateSprintView(View):
                 {'message': 'Sprint Cant be Created Due to No Tasks in the backlog '},
                 status=400
             )
-        active_task_ids = set(SprintItem.objects.filter(sprint__is_active=True).values_list('task__task_id', flat=True))
+        active_task_ids = set(SprintItem.objects.values_list('task__task_id', flat=True))
 
         assignment_map = get_sprint_assignment_map(project_id, sprint_number)
         assigned_story_ids = set(assignment_map.keys())
@@ -322,13 +350,13 @@ class CreateSprintView(View):
                 status=400
             )
 
-        # Save tasks blocked by active sprint for later reporting
+        # Save tasks blocked by existing sprint items for later reporting
         active_blocked_tasks = [
             {
                 'task_id': task.task_id,
                 'task_name': getattr(task, 'task_name', task.tasks or ''),
                 'task_progress_status': getattr(task, 'task_progress_status', 'pending'),
-                'reason': 'already in an active sprint'
+                'reason': 'already in another sprint'
             }
             for task in all_backlog_raw
             if task.task_id in active_task_ids
@@ -363,8 +391,10 @@ class CreateSprintView(View):
         total_capacity = get_team_capacity(workspace_id)
         sprint_capacity = min(max(total_capacity, 0), 80)
 
-        # Step 4: Skill feasibility in team
-        feasible_tasks, infeasible_tasks, available_skills = check_task_skill_feasibility(tasks, workspace_id)
+        # Step 4: No skill-matching filter during sprint creation
+        feasible_tasks = tasks
+        infeasible_tasks = []
+        available_skills = []
 
         # Step 5: Dependency status for tasks
         completed_ids = set(t['task_id'] for t in get_backlog_tasks(project_id) if t.get('task_progress_status') == 'completed')
@@ -383,6 +413,9 @@ class CreateSprintView(View):
         selected_task_ids = run_ilp_optimizer(candidates, load_dependencies(project_id), sprint_capacity)
         if not selected_task_ids and candidates:
             selected_task_ids = run_greedy_fallback(candidates, load_dependencies(project_id), sprint_capacity)
+
+        # Step 6.1: Enforce max unique skill budget per sprint
+        selected_task_ids = enforce_skill_limit(selected_task_ids, candidates, max_skills=10)
 
         # Step 7: Ensure non-empty selection if any feasible task exists
         if not selected_task_ids and candidates and not assigned_story_ids:
@@ -434,7 +467,7 @@ class CreateSprintView(View):
                     'reason': reason
                 })
 
-        # Include tasks omitted due to existing active sprint items in exclusion reporting
+        # Include tasks omitted due to existing sprint items in exclusion reporting
         for skip in active_blocked_tasks:
             # Avoid duplicate if t already in excluded_tasks
             if not any(e['task_id'] == skip['task_id'] for e in excluded_tasks):
@@ -546,8 +579,8 @@ class AddTaskView(View):
         sprint = get_object_or_404(Sprint, id=sprint_id)
         
         # Validate task not in active sprint
-        if SprintItem.objects.filter(task_id=task_id, sprint__is_active=True).exists():
-            return JsonResponse({'error': 'Task already in an active sprint'}, status=400)
+        if SprintItem.objects.filter(task_id=task_id).exists():
+            return JsonResponse({'error': 'Task already exists in another sprint'}, status=400)
         
         # Add SprintItem
         SprintItem.objects.create(sprint=sprint, task_id=task_id)
@@ -638,3 +671,92 @@ class DeactivateSprintView(View):
     # Keep POST support for clients that cannot send PATCH.
     def post(self, request, sprint_id):
         return self.patch(request, sprint_id)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class EditSprintView(View):
+    def put(self, request, sprint_id):
+        sprint = get_object_or_404(Sprint, id=sprint_id)
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        if 'name' in data:
+            sprint.name = data.get('name')
+
+        # Sprint model stores description-like text in `goal`.
+        if 'description' in data:
+            sprint.goal = data.get('description')
+
+        sprint.save(update_fields=['name', 'goal'])
+        return JsonResponse({
+            'message': 'Sprint updated successfully',
+            'sprint': {
+                'id': sprint.id,
+                'name': sprint.name,
+                'description': sprint.goal,
+            }
+        }, status=200)
+
+    def patch(self, request, sprint_id):
+        return self.put(request, sprint_id)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class DeleteSprintView(View):
+    def delete(self, request, sprint_id):
+        sprint = get_object_or_404(Sprint, id=sprint_id)
+
+        # Cleanup dependent suggestions from legacy helper app tables if present.
+        # This prevents FK violations when those tables still reference Sprint.
+        candidate_tables = [
+            'taskalloactionhelper_tasksuggestion',
+            'taskallocationhelper_tasksuggestion',
+        ]
+        developer_workload_tables = [
+            'taskalloactionhelper_developerworkload',
+            'taskallocationhelper_developerworkload',
+        ]
+        ticket_status_history_tables = [
+            'taskalloactionhelper_ticketstatushistory',
+            'taskallocationhelper_ticketstatushistory',
+        ]
+        with connection.cursor() as cursor:
+            for table_name in developer_workload_tables:
+                cursor.execute("SELECT to_regclass(%s)", [table_name])
+                exists = cursor.fetchone()[0]
+                if exists:
+                    cursor.execute(f'DELETE FROM "{table_name}" WHERE sprint_fk_id = %s', [sprint.id])
+
+            for table_name in ticket_status_history_tables:
+                cursor.execute("SELECT to_regclass(%s)", [table_name])
+                exists = cursor.fetchone()[0]
+                if exists:
+                    cursor.execute(f'DELETE FROM "{table_name}" WHERE sprint_fk_id = %s', [sprint.id])
+
+            for table_name in candidate_tables:
+                cursor.execute("SELECT to_regclass(%s)", [table_name])
+                exists = cursor.fetchone()[0]
+                if exists:
+                    # Delete approval workflow rows that reference task suggestions first.
+                    if table_name == 'taskalloactionhelper_tasksuggestion':
+                        workflow_table = 'taskalloactionhelper_assignmentapprovalworkflow'
+                    else:
+                        workflow_table = 'taskallocationhelper_assignmentapprovalworkflow'
+
+                    cursor.execute("SELECT to_regclass(%s)", [workflow_table])
+                    workflow_exists = cursor.fetchone()[0]
+                    if workflow_exists:
+                        cursor.execute(
+                            f'''DELETE FROM "{workflow_table}"
+                                WHERE task_suggestion_fk_id IN (
+                                    SELECT id FROM "{table_name}" WHERE sprint_fk_id = %s
+                                )''',
+                            [sprint.id]
+                        )
+
+                    cursor.execute(f'DELETE FROM "{table_name}" WHERE sprint_fk_id = %s', [sprint.id])
+
+        sprint.delete()
+        return JsonResponse({'message': 'Sprint deleted successfully'}, status=200)
