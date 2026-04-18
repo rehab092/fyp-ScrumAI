@@ -6,12 +6,17 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from assignment_module.models import AdminWorkspace
-from sprintmanager.models import Sprint
+from sprintmanager.models import Sprint, SprintItem
 from taskdependency.models import TaskDependency
 from userstorymanager.models import Backlog, Project
 
-from .models import DelayAlert, TaskProgress
+from .models import DelayAlert
 from .services.engine import run_delay_engine
+
+
+STATUS_PENDING = "PENDING"
+STATUS_IN_PROGRESS = "IN PROGRESS"
+STATUS_COMPLETED = "COMPLETED"
 
 
 def _status_is_done(status_value):
@@ -22,15 +27,30 @@ def _status_is_done(status_value):
 def _normalize_status_input(status_value):
     normalized = str(status_value or "").strip().upper()
     if normalized == "ACTIVE":
-        return TaskProgress.STATUS_IN_PROGRESS
-    return normalized
+        return STATUS_IN_PROGRESS
+    if normalized in {"IN_PROGRESS", "IN-PROGRESS", "INPROGRESS"}:
+        return STATUS_IN_PROGRESS
+    if normalized in {"COMPLETED", "DONE"}:
+        return STATUS_COMPLETED
+    return STATUS_PENDING
+
+
+def _status_to_backlog_value(status_value):
+    normalized = _normalize_status_input(status_value)
+    if normalized == STATUS_IN_PROGRESS:
+        return Backlog.STATUS_IN_PROGRESS
+    if normalized == STATUS_COMPLETED:
+        return Backlog.STATUS_COMPLETED
+    return Backlog.STATUS_PENDING
 
 
 def _status_for_api(status_value):
     normalized = str(status_value or "").strip().upper()
-    if normalized == TaskProgress.STATUS_IN_PROGRESS:
+    if normalized in {STATUS_IN_PROGRESS, "IN_PROGRESS", "IN-PROGRESS", "INPROGRESS"}:
         return "ACTIVE"
-    return normalized
+    if normalized in {STATUS_COMPLETED, "DONE"}:
+        return "COMPLETED"
+    return "PENDING"
 
 
 def _build_reverse_dependency_map(dependencies):
@@ -109,8 +129,6 @@ def upsert_task_progress(request):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     task_id = payload.get("taskId")
-    sprint_id = payload.get("sprintId")
-
     if not task_id:
         return JsonResponse({"error": "taskId is required"}, status=400)
 
@@ -119,63 +137,46 @@ def upsert_task_progress(request):
     except Backlog.DoesNotExist:
         return JsonResponse({"error": "Task not found"}, status=404)
 
+    task_project_id = None
+    try:
+        task_project_id = int(task.project_id)
+    except (TypeError, ValueError):
+        task_project_id = None
+
+    if not task_project_id or not Project.objects.filter(id=task_project_id, owner__workspace=workspace).exists():
+        return JsonResponse({"error": "Task does not belong to workspace"}, status=403)
+
     status = payload.get("status")
-    deadline_raw = payload.get("deadline")
-
-    defaults = {}
     if status is not None:
-        normalized_status = _normalize_status_input(status)
-        allowed_status = {
-            TaskProgress.STATUS_PENDING,
-            TaskProgress.STATUS_IN_PROGRESS,
-            TaskProgress.STATUS_COMPLETED,
-        }
-        if normalized_status not in allowed_status:
-            return JsonResponse({"error": "Invalid status"}, status=400)
-        defaults["status"] = normalized_status
-
-    if deadline_raw is not None:
-        if deadline_raw == "":
-            defaults["deadline"] = None
-        else:
-            try:
-                defaults["deadline"] = date.fromisoformat(deadline_raw)
-            except ValueError:
-                return JsonResponse({"error": "deadline must be YYYY-MM-DD"}, status=400)
-
-    progress, created = TaskProgress.objects.get_or_create(
-        workspace=workspace,
-        task=task,
-        sprint_id=sprint_id,
-        defaults=defaults,
-    )
-
-    if not created:
-        if "status" in defaults:
-            progress.status = defaults["status"]
-        if "deadline" in defaults:
-            progress.deadline = defaults["deadline"]
-        progress.save()
+        task.status = _status_to_backlog_value(status)
+        task.save(update_fields=["status"])
 
     resolved_alerts = 0
-    if progress.status == TaskProgress.STATUS_COMPLETED:
+    if _status_is_done(task.status):
         resolved_alerts = DelayAlert.objects.filter(
             workspace=workspace,
             task=task,
             is_active=True,
         ).update(is_active=False)
 
+    sprint_item = (
+        SprintItem.objects.filter(task=task, sprint__workspace=workspace)
+        .select_related("sprint")
+        .order_by("-sprint__end_date", "-sprint_id")
+        .first()
+    )
+    due_date = sprint_item.sprint.end_date if sprint_item and sprint_item.sprint else None
+
     response = {
-        "id": progress.id,
-        "workspaceId": progress.workspace_id,
-        "taskId": progress.task_id,
-        "sprintId": progress.sprint_id,
-        "status": _status_for_api(progress.status),
-        "deadline": progress.deadline.isoformat() if progress.deadline else None,
+        "workspaceId": workspace.id,
+        "taskId": task.task_id,
+        "sprintId": sprint_item.sprint_id if sprint_item else None,
+        "status": _status_for_api(task.status),
+        "deadline": due_date.isoformat() if due_date else None,
         "resolvedAlerts": resolved_alerts,
     }
 
-    return JsonResponse({"success": True, "created": created, "data": response}, status=200)
+    return JsonResponse({"success": True, "created": False, "data": response}, status=200)
 
 
 @csrf_exempt
@@ -195,7 +196,7 @@ def run_engine(request):
     sprint_id = payload.get("sprintId")
     project_id = payload.get("projectId")
     date_override = payload.get("date")
-    default_status = _normalize_status_input(payload.get("defaultStatus", TaskProgress.STATUS_PENDING))
+    default_status = _normalize_status_input(payload.get("defaultStatus", STATUS_PENDING))
     default_deadline_raw = payload.get("defaultDeadline")
     default_deadline_offset_days = payload.get("defaultDeadlineOffsetDays")
 
@@ -320,7 +321,9 @@ def list_projects_delay_summary(request):
     # Fallback for legacy data where Project.owner.workspace is not populated.
     if not projects:
         project_ids_from_progress = set(
-            TaskProgress.objects.filter(workspace=workspace).values_list("task__project_id", flat=True)
+            Backlog.objects.filter(
+                project_id__in=Project.objects.filter(owner__workspace=workspace).values_list("id", flat=True)
+            ).values_list("project_id", flat=True)
         )
         project_ids_from_alerts = set(
             DelayAlert.objects.filter(workspace=workspace).values_list("task__project_id", flat=True)
@@ -397,7 +400,7 @@ def get_project_delay_context(request, project_id):
         return error
 
     sprint_id = request.GET.get("sprintId")
-    default_status = _normalize_status_input(request.GET.get("defaultStatus", TaskProgress.STATUS_PENDING))
+    default_status = _normalize_status_input(request.GET.get("defaultStatus", STATUS_PENDING))
     default_deadline_raw = request.GET.get("defaultDeadline")
     today = date.today()
 
@@ -409,6 +412,13 @@ def get_project_delay_context(request, project_id):
             return JsonResponse({"error": "defaultDeadline must be YYYY-MM-DD"}, status=400)
 
     tasks_qs = Backlog.objects.filter(project_id=str(project_id)).order_by("task_id")
+    if sprint_id:
+        sprint_task_ids = SprintItem.objects.filter(
+            sprint_id=sprint_id,
+            sprint__workspace=workspace,
+        ).values_list("task_id", flat=True)
+        tasks_qs = tasks_qs.filter(task_id__in=sprint_task_ids)
+
     tasks = list(tasks_qs)
 
     task_ids = [t.task_id for t in tasks]
@@ -419,15 +429,15 @@ def get_project_delay_context(request, project_id):
             is_active=True,
         ).values_list("task_id", flat=True)
     )
-    progress_qs = TaskProgress.objects.filter(workspace=workspace, task_id__in=task_ids)
-    if sprint_id:
-        progress_qs = progress_qs.filter(sprint_id=sprint_id)
-    progress_qs = progress_qs.order_by("task_id", "-updated_at")
-
-    progress_by_task = {}
-    for row in progress_qs:
-        if row.task_id not in progress_by_task:
-            progress_by_task[row.task_id] = row
+    sprint_items = (
+        SprintItem.objects.filter(task_id__in=task_ids, sprint__workspace=workspace)
+        .select_related("sprint")
+        .order_by("task_id", "-sprint__end_date", "-sprint_id")
+    )
+    sprint_by_task = {}
+    for item in sprint_items:
+        if item.task_id not in sprint_by_task:
+            sprint_by_task[item.task_id] = item
 
     dependencies = list(
         TaskDependency.objects.filter(project_id=project_id).only(
@@ -445,9 +455,9 @@ def get_project_delay_context(request, project_id):
     delayed_task_ids = set()
 
     for task in tasks:
-        progress = progress_by_task.get(task.task_id)
-        status = progress.status if progress else default_status
-        due_date = progress.deadline if progress and progress.deadline else default_deadline
+        status = task.status or default_status
+        sprint_item = sprint_by_task.get(task.task_id)
+        due_date = sprint_item.sprint.end_date if sprint_item and sprint_item.sprint else default_deadline
 
         is_delayed = bool(
             (due_date and due_date < today and not _status_is_done(status))

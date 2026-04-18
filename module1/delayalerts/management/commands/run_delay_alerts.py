@@ -3,20 +3,24 @@ from datetime import date, timedelta
 from django.core.management.base import BaseCommand, CommandError
 
 from assignment_module.models import AdminWorkspace
-from delayalerts.models import TaskProgress
 from delayalerts.services.engine import run_delay_engine
 from sprintmanager.models import Sprint
+
+
+STATUS_PENDING = "PENDING"
+STATUS_IN_PROGRESS = "IN PROGRESS"
+STATUS_COMPLETED = "COMPLETED"
 
 
 def _normalize_status(value: str) -> str:
     normalized = str(value or "").strip().upper()
     if normalized == "ACTIVE":
-        return TaskProgress.STATUS_IN_PROGRESS
+        return STATUS_IN_PROGRESS
     if normalized in {"IN_PROGRESS", "IN-PROGRESS", "INPROGRESS"}:
-        return TaskProgress.STATUS_IN_PROGRESS
+        return STATUS_IN_PROGRESS
     if normalized == "COMPLETED":
-        return TaskProgress.STATUS_COMPLETED
-    return TaskProgress.STATUS_PENDING
+        return STATUS_COMPLETED
+    return STATUS_PENDING
 
 
 class Command(BaseCommand):

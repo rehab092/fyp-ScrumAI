@@ -126,6 +126,62 @@ def _sync_backlog_status(task, new_status):
     return backlog_status
 
 
+def _derive_user_story_status_from_backlog(task):
+    """
+    Derive UserStory status from linked Backlog task statuses.
+    This avoids schema changes while keeping UserStory status current.
+    """
+    progress = _derive_user_story_progress_from_backlog(task)
+    return progress.get('status') if progress else None
+
+
+def _derive_user_story_progress_from_backlog(task):
+    """
+    Build aggregate UserStory progress from all linked Backlog tasks.
+    """
+    user_story = getattr(task, 'user_story', None)
+    if not user_story:
+        return None
+
+    statuses = list(
+        Backlog.objects.filter(user_story=user_story).values_list('status', flat=True)
+    )
+    if not statuses:
+        return {
+            'status': 'NOT_STARTED',
+            'total_tasks': 0,
+            'completed_tasks': 0,
+            'in_progress_tasks': 0,
+            'pending_tasks': 0,
+        }
+
+    normalized = [str(s or '').strip().lower() for s in statuses]
+    completed_count = sum(1 for s in normalized if s == 'completed')
+    in_progress_count = sum(1 for s in normalized if s in {'in progress', 'in_progress', 'active'})
+    pending_count = sum(1 for s in normalized if s == 'pending')
+
+    has_completed = completed_count > 0
+    has_in_progress = in_progress_count > 0
+    has_pending = pending_count > 0
+
+    if all(s == 'completed' for s in normalized):
+        aggregate_status = 'COMPLETED'
+    elif has_in_progress or (has_completed and has_pending):
+        aggregate_status = 'IN_PROGRESS'
+    elif has_pending:
+        aggregate_status = 'NOT_STARTED'
+    else:
+        aggregate_status = 'IN_PROGRESS'
+
+    return {
+        'status': aggregate_status,
+        'total_tasks': len(normalized),
+        'completed_tasks': completed_count,
+        'in_progress_tasks': in_progress_count,
+        'pending_tasks': pending_count,
+    }
+
+
 def _update_developer_status(developer, workspace):
     """
     Update developer status based on workload.
@@ -874,6 +930,7 @@ def developer_response_to_assignment(request):
             
             # Sync Backlog status when task is accepted
             _sync_backlog_status(workflow.task_suggestion_fk.task_fk, 'IN_PROGRESS')
+            user_story_progress = _derive_user_story_progress_from_backlog(workflow.task_suggestion_fk.task_fk)
             
             # Store response metadata for tracking
             Notification.objects.create(
@@ -897,7 +954,10 @@ def developer_response_to_assignment(request):
                 'success': True,
                 'status': 'ACTIVE',
                 'assignment_id': workflow.id,
-                'message': f'Task assigned to {dev.name} successfully'
+                'message': f'Task assigned to {dev.name} successfully',
+                'user_story_id': workflow.task_suggestion_fk.task_fk.user_story_id,
+                'user_story_status': (user_story_progress or {}).get('status'),
+                'user_story_progress': user_story_progress,
             }, status=200)
         
         else:  # REJECT
@@ -1014,6 +1074,7 @@ def get_developer_tickets(request):
             ).order_by('-timestamp').first()
             
             current_status = latest_status.new_status if latest_status else 'TO_DO'
+            user_story_progress = _derive_user_story_progress_from_backlog(task)
             if current_status not in ['COMPLETED', 'DELAYED']:
                 effective_due_date = getattr(task, 'due_date', None) or sprint_due_date
                 if effective_due_date:
@@ -1057,6 +1118,9 @@ def get_developer_tickets(request):
                 'can_respond': workflow.current_status in ['SM_APPROVED', 'DEV_PENDING'],
                 'workflow_status': workflow.current_status,
                 'developer_response': workflow.developer_response,
+                'user_story_id': task.user_story_id,
+                'user_story_status': (user_story_progress or {}).get('status'),
+                'user_story_progress': user_story_progress,
             })
         
         # Get workload summary
@@ -1180,6 +1244,7 @@ def update_ticket_status(request, task_id):
         
         # Sync Backlog status when task status changes
         _sync_backlog_status(task, new_status)
+        user_story_progress = _derive_user_story_progress_from_backlog(task)
         
         # Notify Scrum Master
         Notification.objects.create(
@@ -1196,7 +1261,10 @@ def update_ticket_status(request, task_id):
             'new_status': new_status,
             'status_changed_at': status_history.timestamp.isoformat(),
             'workflow_id': workflow.id,
-            'notification_sent_to': ['scrum_master@example.com']  # Would be real SM email
+            'notification_sent_to': ['scrum_master@example.com'],  # Would be real SM email
+            'user_story_id': task.user_story_id,
+            'user_story_status': (user_story_progress or {}).get('status'),
+            'user_story_progress': user_story_progress,
         }, status=200)
     
     except Exception as e:
